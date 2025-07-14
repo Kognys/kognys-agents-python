@@ -1,0 +1,11 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kognys"
+version = "0.0.1"
+description = "Decentralized chain-of-debate research agents"
+authors = [{name = "You"}]
+dependencies = []    # runtime deps are already in requirements.txt
