@@ -39,3 +39,9 @@ Once the cleanup is done and dependencies are installed, you can run all tests u
 # Run all tests
 pytest tests/
 ```
+
+To see logs, run the tests with the `-s` flag.
+
+```bash
+pytest -s tests/
+```
