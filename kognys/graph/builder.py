@@ -1,3 +1,4 @@
+# kognys/graph/builder.py
 from langgraph.graph import StateGraph, END
 from kognys.graph.state import KognysState
 
@@ -6,6 +7,8 @@ from kognys.agents.input_validator import node as input_validator
 from kognys.agents.retriever import node as retriever
 from kognys.agents.synthesizer import node as synthesizer
 from kognys.agents.challenger import node as challenger
+from kognys.agents.checklist import node as checklist
+from kognys.agents.orchestrator import node as orchestrator
 
 _graph = StateGraph(KognysState)
 
@@ -14,31 +17,39 @@ _graph.add_node("input_validator", input_validator)
 _graph.add_node("retriever", retriever)
 _graph.add_node("synthesizer", synthesizer)
 _graph.add_node("challenger", challenger)
+_graph.add_node("checklist", checklist)
+_graph.add_node("orchestrator", orchestrator)
 
 # ── Entry & Edges ────────────────────────────────────────────────────────
 _graph.set_entry_point("input_validator")
 _graph.add_edge("input_validator", "retriever")
 _graph.add_edge("retriever", "synthesizer")
-_graph.add_edge("synthesizer", "challenger")
+# After synthesizing, we always challenge the answer
+_graph.add_edge("synthesizer", "challenger") 
+# After challenging, we run our quality check
+_graph.add_edge("challenger", "checklist")
+# The orchestrator is the last step before ending
+_graph.add_edge("orchestrator", END)
 
-# ── Conditional Edge (The Debate Loop) ───────────────────────────────────
-def should_continue_debate(state: KognysState) -> str:
-    """Determines whether to continue the debate or finalize the answer."""
-    if not state.criticisms:
-        print("---DEBATE COMPLETE: NO CRITICISMS---")
-        # This is a key in the map below, which correctly routes to END
-        return "end_debate" 
+
+# ── Conditional Edge (The Smarter Debate Loop) ──────────────────────────
+def route_after_checklist(state: KognysState) -> str:
+    """
+    Determines the next step after the checklist agent has run.
+    """
+    if state.is_sufficient:
+        # If the answer is sufficient, proceed to the final orchestrator
+        return "orchestrator"
     else:
-        print("---DEBATE CONTINUES: RE-SYNTHESIZE---")
-        # This is the key that was missing. It should be "continue_debate".
-        return "continue_debate"
+        # Otherwise, loop back to the synthesizer to refine the answer
+        return "synthesizer"
 
 _graph.add_conditional_edges(
-    "challenger",
-    should_continue_debate,
+    "checklist",
+    route_after_checklist,
     {
-        "end_debate": END,
-        "continue_debate": "synthesizer" # This now correctly maps the key to the destination node
+        "orchestrator": "orchestrator",
+        "synthesizer": "synthesizer"
     }
 )
 
