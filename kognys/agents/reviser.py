@@ -3,18 +3,19 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from kognys.graph.state import KognysState
 
+# --- PROMPT HAS BEEN UPDATED ---
 _PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a search query reviser. You receive a research question and criticisms about why "
-            "the current answer is failing. Your task is to rewrite the original question into a better, "
-            "more effective search query to find the correct documents. Do not be conversational."
+            "You are a search query reviser. Your goal is to rewrite a research question into a more effective search query for an academic paper database like OpenAlex. \n"
+            "Based on the original question and the criticisms of the failed search, generate a new, concise search query using keywords. \n"
+            "IMPORTANT: Respond with ONLY the search query text and nothing else. Do not include conversational phrases like 'Here is the revised query:'."
         ),
         (
             "human",
             "Original Question: {question}\n\n"
-            "Criticisms of the current answer attempt:\n{criticisms}"
+            "Criticisms of the last retrieval attempt:\n{criticisms}"
         ),
     ]
 )
@@ -24,7 +25,7 @@ _chain = _PROMPT | _llm
 
 def node(state: KognysState) -> dict:
     """
-    Revises the research question based on criticisms.
+    Revises the research question into a better search query based on criticisms.
     """
     if not state.criticisms:
         return {}
@@ -36,5 +37,8 @@ def node(state: KognysState) -> dict:
         "criticisms": criticisms_str
     })
     
-    print(f"---REVISER AGENT--- \nNew Question: {response.content}\n")
-    return {"validated_question": response.content, "documents": []}
+    # The response should now be a clean query string
+    new_query = response.content.strip()
+    
+    print(f"---REVISER AGENT--- \nNew Search Query: {new_query}\n")
+    return {"validated_question": new_query, "documents": []}
