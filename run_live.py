@@ -1,10 +1,27 @@
 # run_live.py
-import uuid
+
 from dotenv import load_dotenv
+load_dotenv() 
+
+import os
+import uuid
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
 
-load_dotenv()
+
+# Add a debug block to verify the environment variable
+print("\n" + "="*30)
+print("--- 🧐 DEBUGGING .ENV ---")
+api_key = os.getenv("MEMBASE_API_KEY")
+if api_key:
+    # To be safe, let's print a part of the key to ensure it's not empty
+    print(f"✅ MEMBASE_API_KEY was found. Starts with: '{api_key[:5]}...'")
+else:
+    print("❌ MEMBASE_API_KEY was NOT found after load_dotenv().")
+    print("   Please check your .env file's name, location, and content.")
+print("="*30 + "\n")
+# --- End of Changes ---
+
 
 def main():
     # ... (setup code is the same) ...
