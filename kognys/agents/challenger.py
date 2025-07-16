@@ -18,9 +18,7 @@ _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 _chain = _PROMPT | _llm
 
 def node(state: KognysState) -> dict:
-    """
-    Generates criticisms for the draft answer.
-    """
+    # --- Changes ---
     response = _chain.invoke({
         "question": state.validated_question,
         "answer": state.draft_answer
