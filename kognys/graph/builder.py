@@ -2,46 +2,56 @@
 from langgraph.graph import StateGraph, END
 from kognys.graph.state import KognysState
 
-# Import all your agent nodes
+# Import all agents, including the new reviser
 from kognys.agents.input_validator import node as input_validator
 from kognys.agents.retriever import node as retriever
 from kognys.agents.synthesizer import node as synthesizer
 from kognys.agents.challenger import node as challenger
 from kognys.agents.checklist import node as checklist
 from kognys.agents.orchestrator import node as orchestrator
+from kognys.agents.publisher import node as publisher
+from kognys.agents.reviser import node as reviser
 
 _graph = StateGraph(KognysState)
 
-# ── Nodes ────────────────────────────────────────────────────────────────
+# --- Add all nodes to the graph ---
 _graph.add_node("input_validator", input_validator)
 _graph.add_node("retriever", retriever)
 _graph.add_node("synthesizer", synthesizer)
 _graph.add_node("challenger", challenger)
 _graph.add_node("checklist", checklist)
 _graph.add_node("orchestrator", orchestrator)
+_graph.add_node("publisher", publisher)
+_graph.add_node("reviser", reviser) # <-- Add the new node
 
-# ── Entry & Edges ────────────────────────────────────────────────────────
+# --- Define the graph's edges ---
 _graph.set_entry_point("input_validator")
 _graph.add_edge("input_validator", "retriever")
 _graph.add_edge("retriever", "synthesizer")
-# After synthesizing, we always challenge the answer
-_graph.add_edge("synthesizer", "challenger") 
-# After challenging, we run our quality check
+_graph.add_edge("synthesizer", "challenger")
 _graph.add_edge("challenger", "checklist")
-# The orchestrator is the last step before ending
-_graph.add_edge("orchestrator", END)
+_graph.add_edge("orchestrator", "publisher")
+_graph.add_edge("publisher", END)
 
+# This is the new edge for the self-correction loop
+_graph.add_edge("reviser", "retriever")
 
-# ── Conditional Edge (The Smarter Debate Loop) ──────────────────────────
+# --- Define the smarter conditional routing ---
 def route_after_checklist(state: KognysState) -> str:
     """
-    Determines the next step after the checklist agent has run.
+    Decides the next step after the checklist agent has run.
     """
+    # If the answer is sufficient, we're done with the debate.
     if state.is_sufficient:
-        # If the answer is sufficient, proceed to the final orchestrator
         return "orchestrator"
+    
+    # If there are criticisms, check if they are about document relevance.
+    # This is a simple heuristic; a more robust check could use an LLM call.
+    if any("documents" in c.lower() or "sources" in c.lower() for c in state.criticisms):
+        print("---DECISION: Documents are irrelevant. Revising question.---")
+        return "reviser"
     else:
-        # Otherwise, loop back to the synthesizer to refine the answer
+        print("---DECISION: Answer needs refinement. Looping back to synthesizer.---")
         return "synthesizer"
 
 _graph.add_conditional_edges(
@@ -49,9 +59,10 @@ _graph.add_conditional_edges(
     route_after_checklist,
     {
         "orchestrator": "orchestrator",
+        "reviser": "reviser",
         "synthesizer": "synthesizer"
     }
 )
 
-# Compile once and reuse
+# Compile the final graph
 kognys_graph = _graph.compile()
