@@ -18,3 +18,4 @@ python-dotenv==1.0.1
 # ─── Dev & QA tools ────────────────────────────────────────────────────
 pytest==8.2.1
 ruff==0.4.4
+python-dotenv

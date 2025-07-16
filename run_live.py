@@ -1,7 +1,10 @@
 # run_live.py
 import uuid
+from dotenv import load_dotenv
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
+
+load_dotenv()
 
 def main():
     # ... (setup code is the same) ...
