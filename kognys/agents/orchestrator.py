@@ -15,12 +15,19 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+_llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
 _chain = _PROMPT | _llm
 
 def node(state: KognysState) -> dict:
     """
-    Formats the final draft into a polished answer.
+    Conditionally formats the final answer OR a "cannot answer" message.
     """
+    # If retrieval failed, there will be no draft answer.
+    if state.retrieval_status == "No documents found":
+        print("---ORCHESTRATOR: No documents found to generate an answer.---")
+        return {"final_answer": "I am sorry, but I could not find any relevant information in the knowledge base to answer your question."}
+    
+    # Otherwise, format the successful draft as before
+    print("---ORCHESTRATOR: Formatting final answer.---")
     response = _chain.invoke({"answer": state.draft_answer})
     return {"final_answer": response.content}
