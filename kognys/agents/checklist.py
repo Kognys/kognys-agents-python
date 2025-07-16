@@ -15,15 +15,16 @@ _PROMPT = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a meticulous checklist agent. Your role is to determine if the research process should conclude. "
-            "Evaluate the draft answer against the original question and the outstanding criticisms. "
-            "If the answer is complete, comprehensive, and all criticisms have been addressed, set 'is_sufficient' to true. "
-            "Otherwise, set it to false. Respond using the `ChecklistResponse` JSON format."
+            "You are a pragmatic checklist agent and the final arbiter of quality. Your role is to determine if the research process should conclude. "
+            "Critically evaluate the draft answer against the user's original question. "
+            "Review the outstanding criticisms, but use your own judgment. If the draft answer is factually correct, comprehensive, and directly answers the user's question, you should approve it, even if there are minor, non-essential criticisms remaining. "
+            "For example, if the core answer is solid but a criticism asks for 'more case studies,' you can decide the answer is 'good enough' and set 'is_sufficient' to true. "
+            "Only set 'is_sufficient' to false if the answer is factually wrong, incomplete, or fails to address the core of the user's question. "
+            "Respond using the `ChecklistResponse` JSON format."
         ),
         (
             "human",
             "Original Question: {question}\n\n"
-            "Retrieved Documents:\n{documents}\n\n"
             "Draft Answer:\n{answer}\n\n"
             "Outstanding Criticisms:\n{criticisms}"
         ),
