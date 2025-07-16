@@ -27,14 +27,30 @@ _graph.add_node("reviser", reviser) # <-- Add the new node
 # --- Define the graph's edges ---
 _graph.set_entry_point("input_validator")
 _graph.add_edge("input_validator", "retriever")
-_graph.add_edge("retriever", "synthesizer")
 _graph.add_edge("synthesizer", "challenger")
 _graph.add_edge("challenger", "checklist")
 _graph.add_edge("orchestrator", "publisher")
 _graph.add_edge("publisher", END)
 
-# This is the new edge for the self-correction loop
 _graph.add_edge("reviser", "retriever")
+
+# --- Conditional Edge After Retrieval ---
+def route_after_retrieval(state: KognysState) -> str:
+    if state.retrieval_status == "No documents found":
+        # If no docs, go directly to the orchestrator to give a final response
+        return "orchestrator"
+    else:
+        # If docs are found, proceed with the debate
+        return "synthesizer"
+
+_graph.add_conditional_edges(
+    "retriever",
+    route_after_retrieval,
+    {
+        "orchestrator": "orchestrator",
+        "synthesizer": "synthesizer"
+    }
+)
 
 # --- Define the smarter conditional routing ---
 def route_after_checklist(state: KognysState) -> str:
