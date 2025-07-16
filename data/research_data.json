@@ -1,0 +1,14 @@
+[
+  {
+    "source": "GitHub Copilot Docs",
+    "content": "Generative AI, like GitHub Copilot, is being used for code completion. It suggests entire lines or blocks of code to developers as they type, speeding up the development process significantly."
+  },
+  {
+    "source": "DevOps Weekly",
+    "content": "Another key application of generative AI in software development is automated test generation. Models can analyze code to create relevant unit tests and integration tests, improving code coverage and quality."
+  },
+  {
+    "source": "Software 2.0 Blog",
+    "content": "AI is also being used to automate documentation writing. Generative models can parse codebases and generate clear, human-readable documentation for functions, classes, and APIs, keeping docs in sync with the code."
+  }
+]
