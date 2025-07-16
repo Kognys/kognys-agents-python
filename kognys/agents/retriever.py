@@ -1,17 +1,18 @@
 # kognys/agents/retriever.py
-
 from kognys.graph.state import KognysState
-from kognys.services.vector_store import similarity_search
+# Change the import to use the new OpenAlex client
+from kognys.services.openalex_client import search_works
 
-def node(state: KognysState) -> dict: # Change return type hint to dict
+def node(state: KognysState) -> dict:
     """
-    Retrieves documents relevant to the validated question.
+    Retrieves documents from the OpenAlex API based on the validated question.
     """
-    docs = similarity_search(state.validated_question or state.question, k=6)
+    # Call the new search_works function
+    docs = search_works(state.validated_question or state.question, k=5)
     
     if not docs:
-        raise ValueError("RetrieverAgent found no matching documents.")
+        print("---RETRIEVER (OpenAlex): No documents found.---")
+        return {"documents": [], "retrieval_status": "No documents found"}
     
-    # Return a dictionary with ONLY the state field that needs to be updated.
-    # LangGraph will merge this into the main state.
-    return {"documents": docs}
+    print(f"---RETRIEVER (OpenAlex): Found {len(docs)} documents.---")
+    return {"documents": docs, "retrieval_status": "Documents found"}
