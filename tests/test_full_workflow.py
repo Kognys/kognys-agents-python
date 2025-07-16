@@ -1,4 +1,7 @@
 # tests/test_full_workflow.py
+# This test is designed to test the full workflow of the agent, including the debate-and-refine loop.
+# it doesn't test the AI generation of the final answer, it just tests the workflow with mocked responses.
+
 from unittest.mock import patch, MagicMock
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
