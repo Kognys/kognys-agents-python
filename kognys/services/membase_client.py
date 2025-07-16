@@ -49,4 +49,33 @@ def search_knowledge_base(query: str, k: int = 5) -> list[dict]:
         print(f"Error calling Membase Knowledge API: {e}")
         return []
 
-# You can also add a function here to use the POST /documents endpoint for seeding
+def add_knowledge_document(title: str, content: str, source_id: str) -> dict:
+    """
+    Adds a new document to the Membase Knowledge Base via the API.
+    """
+    if not API_KEY:
+        raise ValueError("MEMBASE_API_KEY is not set in the environment.")
+
+    add_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
+    
+    headers = {
+        "X-API-Key": API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "title": title,
+        "content": content,
+        "category": "Generated Research",
+        "tags": ["kognys-agent"],
+        "metadata": {"source_agent": "KognysResearchAgent", "original_source": source_id}
+    }
+
+    try:
+        response = requests.post(add_url, headers=headers, json=payload)
+        response.raise_for_status()
+        print(f"---MEMBASE CLIENT: Successfully added document '{title}' to Knowledge Base.---")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Membase Add Document API: {e}")
+        return {}
