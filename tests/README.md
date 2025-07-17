@@ -45,3 +45,15 @@ To see logs, run the tests with the `-s` flag.
 ```bash
 pytest -s tests/
 ```
+
+For the API tests, run the api server:
+
+```bash
+python -m uvicorn api_main:app --reload
+```
+
+then run the test:
+
+```bash
+pytest tests/test_api.py
+```
