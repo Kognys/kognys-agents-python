@@ -16,7 +16,7 @@ def node(state: KognysState) -> dict:
     membase_docs = search_knowledge_base(query, k=3)
     
     # 2. Search the external, live academic database
-    openalex_docs = search_works(query, k=3)
+    openalex_docs = search_works(query, k=5)
     
     # 3. Combine the results
     # A simple combination for now. A more advanced version could de-duplicate results.
