@@ -1,85 +1,92 @@
-# api_main.py
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import uuid
-import os
-from contextlib import asynccontextmanager
+from fastapi.testclient import TestClient
+from unittest.mock import patch
 
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
+# Import the FastAPI app instance from your api_main.py file
+from api_main import app
 
-# Your Kognys agent and state
-from kognys.graph.builder import kognys_graph
-from kognys.graph.state import KognysState
-
-# Your Membase client to save/retrieve results
-from kognys.services.membase_client import add_knowledge_document, search_knowledge_base, register_agent_if_not_exists
+# Create a client to interact with your API in a test environment
+client = TestClient(app)
 
 
-# --- START OF CHANGES: Use lifespan for startup events ---
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # This code runs on startup
-    print("--- API STARTUP: REGISTERING AGENT ---")
-    agent_id = os.getenv("MEMBASE_ID", "kognys-api-agent-001")
-    is_registered = register_agent_if_not_exists(
-        agent_id=agent_id,
-        name="Kognys API Research Agent",
-        description="An autonomous agent that performs research via a REST API."
-    )
-    if not is_registered:
-        print("!!! WARNING: Agent registration failed. API might not function correctly. !!!")
-    else:
-        print("--- AGENT REGISTRATION COMPLETE ---")
-    
-    yield
-    # This code runs on shutdown (if you need it)
-    print("--- API SHUTDOWN ---")
-
-# Initialize the FastAPI app with the new lifespan manager
-app = FastAPI(
-    title="Kognys Research Agent API",
-    description="An API to generate research papers and retrieve them from Unibase Membase.",
-    lifespan=lifespan
-)
-
-# --- END OF CHANGES ---
-
-
-# --- Define API Models (for request and response bodies) ---
-class CreatePaperRequest(BaseModel):
-    message: str
-    user_id: str
-
-class PaperResponse(BaseModel):
-    paper_id: str
-    paper_content: str
-
-# --- API Endpoints ---
-# (Your @app.post("/papers") and @app.get("/papers/{paper_id}") endpoints remain exactly the same)
-
-@app.post("/papers", response_model=PaperResponse)
-def create_paper(request: CreatePaperRequest):
+@patch('api_main.kognys_graph.invoke')
+def test_create_paper_endpoint(mock_graph_invoke):
     """
-    Runs the Kognys agent to generate a research paper based on the user's message.
+    Tests the POST /papers endpoint.
+    It mocks the agent graph to ensure the API layer works in isolation.
     """
-    print(f"Received request from user '{request.user_id}' to research: '{request.message}'")
+    # 1. ARRANGE: Set up the mock return value for the Kognys agent
+    mock_final_answer = "This is a detailed research paper about quantum computing."
+    mock_graph_invoke.return_value = {
+        "final_answer": mock_final_answer,
+        "retrieval_status": "Documents found"
+    }
+
+    # Define the request payload
+    request_payload = {
+        "message": "What is quantum computing?",
+        "user_id": "test-user-001"
+    }
+
+    # 2. ACT: Make a request to the API endpoint
+    response = client.post("/papers", json=request_payload)
+
+    # 3. ASSERT: Check the response and that our agent was called
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "paper_id" in response_data
+    assert response_data["paper_content"] == mock_final_answer
+    mock_graph_invoke.assert_called_once()
     
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    initial_state = KognysState(question=request.message)
+    print("\n✅ API test for POST /papers passed successfully.")
+
+
+@patch('api_main.get_paper_by_title')
+def test_get_paper_endpoint(mock_get_paper):
+    """
+    Tests the GET /papers/{paper_title} endpoint.
+    It mocks the service function to ensure the API layer works in isolation.
+    """
+    # 1. ARRANGE: Set up the mock return value for the Membase client
+    # --- THIS IS THE FIX: Removed the trailing '?' ---
+    paper_title_to_find = "Research on: What is quantum computing"
+    # --- END OF FIX ---
     
-    final_state_result = kognys_graph.invoke(initial_state, config=config)
-    final_answer = final_state_result.get("final_answer")
+    mock_paper_content = "This is a detailed research paper about quantum computing."
+    mock_get_paper.return_value = {
+        "source": "doc-id-123",
+        "content": mock_paper_content,
+        "score": 0.95
+    }
+
+    # 2. ACT: Make a request to the API endpoint
+    response = client.get(f"/papers/{paper_title_to_find}")
+
+    # 3. ASSERT: Check the response and that our service was called
+    assert response.status_code == 200
+    response_data = response.json()
+    assert response_data["paper_id"] == "doc-id-123"
+    assert response_data["paper_content"] == mock_paper_content
+    mock_get_paper.assert_called_once_with(paper_title_to_find)
+
+    print("\n✅ API test for GET /papers/{paper_title} passed successfully.")
+
+
+@patch('api_main.get_paper_by_title')
+def test_get_paper_not_found(mock_get_paper):
+    """
+    Tests the GET /papers/{paper_title} endpoint for a paper that doesn't exist.
+    """
+    # 1. ARRANGE: Set the mock to return None, simulating a failed search
+    mock_get_paper.return_value = None
     
-    if not final_answer or final_state_result.get("retrieval_status") == "No documents found":
-        raise HTTPException(
-            status_code=400, 
-            detail="Agent could not generate a sufficient answer based on the provided query."
-        )
-        
-    return PaperResponse(
-        paper_id=config["configurable"]["thread_id"],
-        paper_content=final_answer
-    )
+    paper_title_to_find = "A paper that does not exist"
+
+    # 2. ACT: Make a request to the API endpoint
+    response = client.get(f"/papers/{paper_title_to_find}")
+
+    # 3. ASSERT: Check that the API returns a 404 Not Found error
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Paper not found in the knowledge base."}
+    mock_get_paper.assert_called_once_with(paper_title_to_find)
+    
+    print("\n✅ API test for 404 Not Found passed successfully.")
