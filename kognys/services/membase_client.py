@@ -57,25 +57,63 @@ def add_knowledge_document(title: str, content: str, source_id: str) -> dict:
         raise ValueError("MEMBASE_API_KEY is not set in the environment.")
 
     add_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
+    headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
     
-    headers = {
-        "X-API-Key": API_KEY,
-        "Content-Type": "application/json"
-    }
-    
+    # --- Start of Changes ---
+    # Let's simplify the payload to only include the required fields,
+    # matching our successful manual test.
     payload = {
         "title": title,
-        "content": content,
-        "category": "Generated Research",
-        "tags": ["kognys-agent"],
-        "metadata": {"source_agent": "KognysResearchAgent", "original_source": source_id}
+        "content": content
+        # "category": "Generated Research",          # Temporarily commented out
+        # "tags": ["kognys-agent"],                 # Temporarily commented out
+        # "metadata": {"source_agent": "KognysResearchAgent", "original_source": source_id} # Temporarily commented out
     }
+    # --- End of Changes ---
 
     try:
         response = requests.post(add_url, headers=headers, json=payload)
         response.raise_for_status()
-        print(f"---MEMBASE CLIENT: Successfully added document '{title}' to Knowledge Base.---")
+        print(f"---MEMBASE CLIENT: Successfully sent document '{title}' to API.---")
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error calling Membase Add Document API: {e}")
         return {}
+
+def register_agent_if_not_exists(agent_id: str, name: str, description: str) -> bool:
+    """
+    Checks if an agent exists in Membase and registers it if it doesn't.
+    Returns True if the agent exists or was created successfully, False otherwise.
+    """
+    if not API_KEY:
+        raise ValueError("MEMBASE_API_KEY is not set in the environment.")
+
+    agent_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}"
+    headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+    try:
+        response = requests.get(agent_url, headers=headers)
+        if response.status_code == 200:
+            print(f"✅ Agent '{agent_id}' is already registered.")
+            return True
+    except requests.exceptions.RequestException as e:
+        print(f"Could not check for agent, proceeding to create. Error: {e}")
+
+    print(f"Agent '{agent_id}' not found. Attempting to register now...")
+    create_url = f"{API_BASE_URL}/api/v1/agents/"
+    payload = {
+        "agent_id": agent_id,
+        "name": name,
+        "description": description,
+        "capabilities": ["research", "synthesis", "debate"]
+    }
+
+    try:
+        response = requests.post(create_url, headers=headers, json=payload)
+        response.raise_for_status()
+        print(f"✅ Successfully registered new agent: '{agent_id}'")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to register agent '{agent_id}'. Error: {e}")
+        print(f"   Response body: {response.text}")
+        return False
