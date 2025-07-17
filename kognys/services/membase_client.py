@@ -117,3 +117,17 @@ def register_agent_if_not_exists(agent_id: str, name: str, description: str) -> 
         print(f"❌ Failed to register agent '{agent_id}'. Error: {e}")
         print(f"   Response body: {response.text}")
         return False
+
+def get_paper_by_title(title: str) -> dict | None:
+    """
+    Searches for a specific document by its title.
+    Assumes the title is unique enough for a targeted search.
+    """
+    # Use the existing search function to find the paper
+    results = search_knowledge_base(query=title, k=1)
+    
+    if results:
+        # Return the first and most relevant result
+        return results[0]
+    
+    return None
