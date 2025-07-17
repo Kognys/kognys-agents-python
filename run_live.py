@@ -1,5 +1,4 @@
 # run_live.py
-
 from dotenv import load_dotenv
 load_dotenv() 
 
@@ -7,52 +6,62 @@ import os
 import uuid
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
-
-
-# Add a debug block to verify the environment variable
-print("\n" + "="*30)
-print("--- 🧐 DEBUGGING .ENV ---")
-api_key = os.getenv("MEMBASE_API_KEY")
-if api_key:
-    # To be safe, let's print a part of the key to ensure it's not empty
-    print(f"✅ MEMBASE_API_KEY was found. Starts with: '{api_key[:5]}...'")
-else:
-    print("❌ MEMBASE_API_KEY was NOT found after load_dotenv().")
-    print("   Please check your .env file's name, location, and content.")
-print("="*30 + "\n")
-# --- End of Changes ---
-
+from kognys.services.membase_client import register_agent_if_not_exists
 
 def main():
-    # ... (setup code is the same) ...
-    research_question = "What are the most promising applications of generative AI in software development?"
-    print("...")
+    """
+    Registers the agent identity and then runs a live, end-to-end test
+    of the Kognys research agent.
+    """
+    # 1. Register the agent identity before starting the workflow
+    print("\n--- AGENT REGISTRATION ---")
+    agent_id = os.getenv("MEMBASE_ID", "kognys-research-agent-test-001")
+    is_registered = register_agent_if_not_exists(
+        agent_id=agent_id,
+        name="Kognys Research Agent",
+        description="An autonomous agent that performs research using a Chain-of-Debate framework."
+    )
 
+    if not is_registered:
+        print("\nCould not register agent identity. Aborting research task.")
+        return
+    print("--------------------------\n")
+
+    # 2. Define the research question for this live run
+    research_question = "What are the most promising applications of generative AI in software development?"
+
+    print("="*60)
+    print(f"🚀 STARTING KOGNYS RESEARCH AGENT 🚀")
+    print(f"Research Question: {research_question}")
+    print("="*60 + "\n")
+
+    # 3. Set up the configuration for the graph run
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=research_question)
 
-    # Use .stream() to see the output from each node as it runs
+    # 4. Use .stream() to see the output from each node as it runs
     for i, chunk in enumerate(kognys_graph.stream(initial_state, config=config)):
-        # --- Start of Changes ---
-        # Add a guard clause to skip empty or invalid chunks
         if not chunk:
             continue
         
         node_name, state_update = list(chunk.items())[0]
         
-        # Another guard clause for safety
         if state_update is None:
             continue
-        # --- End of Changes ---
 
         print(f"\n--- ➡️ STEP {i+1}: EXECUTING NODE '{node_name}' ---")
         
-        # The rest of the logging logic remains the same
+        # Log the specific data that was changed in this step
         if 'validated_question' in state_update:
             print(f"  - Validated Question: \"{state_update['validated_question']}\"")
         if 'documents' in state_update:
             print(f"  - Retrieved {len(state_update['documents'])} documents.")
-        # ... (and so on for the other keys) ...
+        if 'draft_answer' in state_update:
+            print(f"  - Draft Answer: \"{state_update['draft_answer']}\"")
+        if 'criticisms' in state_update and state_update['criticisms']:
+            print(f"  - Criticisms Found: {state_update['criticisms']}")
+        if 'is_sufficient' in state_update:
+            print(f"  - Sufficiency Check: {state_update['is_sufficient']}")
         if 'final_answer' in state_update:
             print("\n" + "="*60)
             print("✅ FINAL ANSWER")
