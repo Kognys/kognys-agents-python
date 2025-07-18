@@ -17,10 +17,10 @@ from kognys.graph.state import KognysState
 # Your service clients
 from kognys.services.membase_client import register_agent_if_not_exists
 from kognys.services.unibase_da_client import download_paper_from_da
+from kognys.services.error_handler import generate_error_response
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # This startup logic is correct
     print("--- API STARTUP: REGISTERING AGENT ---")
     agent_id = os.getenv("MEMBASE_ID", "kognys-api-agent-001")
     is_registered = register_agent_if_not_exists(
@@ -63,24 +63,26 @@ def create_paper(request: CreatePaperRequest):
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=request.message)
     
-    # --- START OF CHANGE ---
+    final_state_result = None
     try:
         final_state_result = kognys_graph.invoke(initial_state, config=config)
-        final_answer = final_state_result.get("final_answer")
     except ValueError as e:
-        # If the InputValidator rejects the question, catch it and return a clean error
-        print(f"--- AGENT REJECTED QUESTION: {e} ---")
-        raise HTTPException(
-            status_code=400, # Bad Request
-            detail=f"The research question was rejected by the agent. Reason: {e}"
+        # --- UPDATED: Call the new error handler function ---
+        ai_error_message = generate_error_response(
+            error_type="VALIDATION_FAILED", 
+            original_question=request.message
         )
-    # --- END OF CHANGE ---
+        raise HTTPException(status_code=400, detail=ai_error_message)
+        
+    final_answer = final_state_result.get("final_answer")
     
     if not final_answer or final_state_result.get("retrieval_status") == "No documents found":
-        raise HTTPException(
-            status_code=400, 
-            detail="Agent could not generate a sufficient answer based on the provided query."
+        # --- UPDATED: Call the new error handler function ---
+        ai_error_message = generate_error_response(
+            error_type="NO_DOCUMENTS_FOUND", 
+            original_question=request.message
         )
+        raise HTTPException(status_code=404, detail=ai_error_message)
         
     return PaperResponse(
         paper_id=config["configurable"]["thread_id"],
