@@ -1,33 +1,38 @@
 # api_main.py
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import uuid
-import os
-from contextlib import asynccontextmanager
-
-# Load environment variables
 from dotenv import load_dotenv
 load_dotenv() 
 
-# Your Kognys agent and state
+import os
+import uuid
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
-
-# Import the new DA client and the agent registration function
-from kognys.services.unibase_da_client import download_paper_from_da
 from kognys.services.membase_client import register_agent_if_not_exists
+from kognys.services.unibase_da_client import download_paper_from_da
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # This startup logic can remain the same
+    # This code runs on startup
     print("--- API STARTUP: REGISTERING AGENT ---")
     agent_id = os.getenv("MEMBASE_ID", "kognys-api-agent-001")
-    is_registered = register_agent_if_not_exists(...)
+    
+    # This is the corrected function call with all required arguments
+    is_registered = register_agent_if_not_exists(
+        agent_id=agent_id,
+        name="Kognys API Research Agent",
+        description="An autonomous agent that performs research via a REST API."
+    )
+    
     if not is_registered:
-        print("!!! WARNING: Agent registration failed. !!!")
+        print("!!! WARNING: Agent registration failed. API might not function correctly. !!!")
     else:
         print("--- AGENT REGISTRATION COMPLETE ---")
+    
     yield
+    # This code runs on shutdown
     print("--- API SHUTDOWN ---")
 
 app = FastAPI(
@@ -36,7 +41,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# --- API Models ---
 class CreatePaperRequest(BaseModel):
     message: str
     user_id: str
@@ -45,15 +49,12 @@ class PaperResponse(BaseModel):
     paper_id: str
     paper_content: str
 
-# --- API Endpoints ---
 @app.get("/", summary="Health Check")
 def health_check():
     return {"status": "ok"}
 
 @app.post("/papers", response_model=PaperResponse)
 def create_paper(request: CreatePaperRequest):
-    print(f"Received request from user '{request.user_id}' to research: '{request.message}'")
-    
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=request.message)
     
@@ -70,11 +71,6 @@ def create_paper(request: CreatePaperRequest):
 
 @app.get("/papers/{paper_id}", response_model=PaperResponse)
 def get_paper(paper_id: str):
-    """
-    Retrieves a specific paper by its ID from the Unibase DA service.
-    """
-    print(f"Request to get paper with ID: {paper_id}")
-    
     paper_data = download_paper_from_da(paper_id)
     
     if not paper_data:
