@@ -12,11 +12,10 @@ def node(state: KognysState) -> dict:
     
     print(f"---RETRIEVER: Searching OpenAlex, arXiv, and Semantic Scholar for: '{query}'---")
 
-    # Call all three APIs
-    # NOTE: For a production system, you would run these in parallel (e.g., with threads)
-    openalex_docs = search_works(query, k=2)
-    arxiv_docs = search_arxiv(query, k=2)
-    semantic_scholar_docs = search_semantic_scholar(query, k=2)
+    # Increase the number of documents requested from each source to get a richer context.
+    openalex_docs = search_works(query, k=5)
+    arxiv_docs = search_arxiv(query, k=5)
+    semantic_scholar_docs = search_semantic_scholar(query, k=5)
     
     # Combine the results
     combined_docs = openalex_docs + arxiv_docs + semantic_scholar_docs
