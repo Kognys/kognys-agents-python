@@ -31,17 +31,19 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-# 3. Configure a structured-output LLM
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_structured_llm = _llm.with_structured_output(ChecklistResponse)
-
-# 4. Construct the chain
-_chain = _PROMPT | _structured_llm
 
 def node(state: KognysState) -> dict:
     """
     Checks if the draft answer is sufficient to end the debate loop.
     """
+
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _structured_llm = _llm.with_structured_output(ChecklistResponse)
+
+    # Construct the chain
+    _chain = _PROMPT | _structured_llm
+
     if not state.draft_answer:
         return {"is_sufficient": False}
 

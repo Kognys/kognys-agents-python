@@ -36,17 +36,18 @@ revision_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-# Make sure to define your LLM instance here
-_llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
-
-# The chains are now separate
-initial_chain = initial_prompt | _llm
-revision_chain = revision_prompt | _llm
-
 def node(state: KognysState) -> dict:
     """
     Conditionally synthesizes or revises an answer based on the graph state.
     """
+
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+
+    # The chains are now separate
+    initial_chain = initial_prompt | _llm
+    revision_chain = revision_prompt | _llm
+
     question = state.validated_question
     documents = state.documents
     draft_answer = state.draft_answer

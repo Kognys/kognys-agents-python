@@ -20,13 +20,16 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_chain = _PROMPT | _llm
+
 
 def node(state: KognysState) -> dict:
     """
     Revises the research question into a better search query based on criticisms.
     """
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _chain = _PROMPT | _llm
+
     if not state.criticisms:
         return {}
 

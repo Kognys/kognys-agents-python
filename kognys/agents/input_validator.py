@@ -25,9 +25,7 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-# 3. Configure the LLM to *always* return JSON matching our Pydantic model
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-_structured_llm = _llm.with_structured_output(ValidatorResponse)
+
 
 # 4. Construct the chain using the LCEL pipe syntax
 _chain = _PROMPT | _structured_llm
@@ -37,6 +35,10 @@ def node(state: KognysState) -> dict:
     """
     Validates the user's question and returns the changes to be merged into the state.
     """
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _structured_llm = _llm.with_structured_output(ValidatorResponse)
+
     # Use the chain to get a guaranteed Pydantic object back
     response = _chain.invoke({"question": state.question})
 

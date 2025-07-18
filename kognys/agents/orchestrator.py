@@ -15,13 +15,16 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
-_chain = _PROMPT | _llm
+
 
 def node(state: KognysState) -> dict:
     """
     Conditionally formats the final answer OR a "cannot answer" message.
     """
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0)
+    _chain = _PROMPT | _llm
+
     # If retrieval failed, there will be no draft answer.
     if state.retrieval_status == "No documents found":
         print("---ORCHESTRATOR: No documents found to generate an answer.---")

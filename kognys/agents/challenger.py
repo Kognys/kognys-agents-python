@@ -14,11 +14,14 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
-_chain = _PROMPT | _llm
-
 def node(state: KognysState) -> dict:
-    # --- Changes ---
+    """
+    Generates criticisms for the draft answer.
+    """
+    # Configure the LLM to *always* return JSON matching our Pydantic model
+    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+    _chain = _PROMPT | _llm
+
     response = _chain.invoke({
         "question": state.validated_question,
         "answer": state.draft_answer
