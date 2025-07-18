@@ -21,4 +21,5 @@ ruff==0.4.4
 python-dotenv
 fastapi
 uvicorn
+gunicorn
 httpx
