@@ -1,11 +1,28 @@
 from fastapi.testclient import TestClient
 from unittest.mock import patch
+import uuid
 
 # Import the FastAPI app instance from your api_main.py file
 from api_main import app
 
 # Create a client to interact with your API in a test environment
 client = TestClient(app)
+
+
+def test_health_check_endpoint():
+    """
+    Tests the GET / endpoint to ensure it returns a successful response.
+    """
+    # 1. ACT: Make a request to the health check endpoint
+    response = client.get("/")
+
+    # 2. ASSERT: Check that the API returned a successful status code and message
+    assert response.status_code == 200
+    # --- THIS IS THE FIX: Changed to match the actual API response ---
+    assert response.json() == {"status": "ok"}
+    # --- END OF FIX ---
+    
+    print("\n✅ API test for GET / (health check) passed successfully.")
 
 
 @patch('api_main.kognys_graph.invoke')
@@ -15,7 +32,7 @@ def test_create_paper_endpoint(mock_graph_invoke):
     It mocks the agent graph to ensure the API layer works in isolation.
     """
     # 1. ARRANGE: Set up the mock return value for the Kognys agent
-    mock_final_answer = "This is a detailed research paper about quantum computing."
+    mock_final_answer = "This is a detailed research paper about decentralized AI."
     mock_graph_invoke.return_value = {
         "final_answer": mock_final_answer,
         "retrieval_status": "Documents found"
@@ -23,8 +40,8 @@ def test_create_paper_endpoint(mock_graph_invoke):
 
     # Define the request payload
     request_payload = {
-        "message": "What is quantum computing?",
-        "user_id": "test-user-001"
+        "message": "What is decentralized AI?",
+        "user_id": "test-user-002"
     }
 
     # 2. ACT: Make a request to the API endpoint
@@ -40,53 +57,50 @@ def test_create_paper_endpoint(mock_graph_invoke):
     print("\n✅ API test for POST /papers passed successfully.")
 
 
-@patch('api_main.get_paper_by_title')
-def test_get_paper_endpoint(mock_get_paper):
+@patch('api_main.download_paper_from_da')
+def test_get_paper_endpoint(mock_download_paper):
     """
-    Tests the GET /papers/{paper_title} endpoint.
-    It mocks the service function to ensure the API layer works in isolation.
+    Tests the GET /papers/{paper_id} endpoint.
+    It mocks the unibase_da_client to ensure the API layer works in isolation.
     """
-    # 1. ARRANGE: Set up the mock return value for the Membase client
-    # --- THIS IS THE FIX: Removed the trailing '?' ---
-    paper_title_to_find = "Research on: What is quantum computing"
-    # --- END OF FIX ---
-    
-    mock_paper_content = "This is a detailed research paper about quantum computing."
-    mock_get_paper.return_value = {
-        "source": "doc-id-123",
-        "content": mock_paper_content,
-        "score": 0.95
+    # 1. ARRANGE: Set up the mock return value for the DA client
+    paper_id_to_find = str(uuid.uuid4())
+    mock_paper_content = "This is the content of the downloaded paper."
+    mock_download_paper.return_value = {
+        "id": paper_id_to_find,
+        "message": mock_paper_content,
+        "owner": "test-owner"
     }
 
     # 2. ACT: Make a request to the API endpoint
-    response = client.get(f"/papers/{paper_title_to_find}")
+    response = client.get(f"/papers/{paper_id_to_find}")
 
     # 3. ASSERT: Check the response and that our service was called
     assert response.status_code == 200
     response_data = response.json()
-    assert response_data["paper_id"] == "doc-id-123"
+    assert response_data["paper_id"] == paper_id_to_find
     assert response_data["paper_content"] == mock_paper_content
-    mock_get_paper.assert_called_once_with(paper_title_to_find)
+    mock_download_paper.assert_called_once_with(paper_id_to_find)
 
-    print("\n✅ API test for GET /papers/{paper_title} passed successfully.")
+    print("\n✅ API test for GET /papers/{paper_id} passed successfully.")
 
 
-@patch('api_main.get_paper_by_title')
-def test_get_paper_not_found(mock_get_paper):
+@patch('api_main.download_paper_from_da')
+def test_get_paper_not_found(mock_download_paper):
     """
-    Tests the GET /papers/{paper_title} endpoint for a paper that doesn't exist.
+    Tests the GET /papers/{paper_id} endpoint for a paper that doesn't exist.
     """
-    # 1. ARRANGE: Set the mock to return None, simulating a failed search
-    mock_get_paper.return_value = None
+    # 1. ARRANGE: Set the mock to return None, simulating a failed download
+    mock_download_paper.return_value = None
     
-    paper_title_to_find = "A paper that does not exist"
+    paper_id_to_find = "an-id-that-does-not-exist"
 
     # 2. ACT: Make a request to the API endpoint
-    response = client.get(f"/papers/{paper_title_to_find}")
+    response = client.get(f"/papers/{paper_id_to_find}")
 
     # 3. ASSERT: Check that the API returns a 404 Not Found error
     assert response.status_code == 404
-    assert response.json() == {"detail": "Paper not found in the knowledge base."}
-    mock_get_paper.assert_called_once_with(paper_title_to_find)
+    assert response.json() == {"detail": "Paper not found in Unibase DA."}
+    mock_download_paper.assert_called_once_with(paper_id_to_find)
     
     print("\n✅ API test for 404 Not Found passed successfully.")
