@@ -55,5 +55,5 @@ python -m uvicorn api_main:app --reload
 then run the test:
 
 ```bash
-pytest tests/test_api.py
+python -m pytest -s tests/test_api.py
 ```
