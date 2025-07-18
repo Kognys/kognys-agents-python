@@ -61,6 +61,13 @@ class PaperResponse(BaseModel):
 
 # --- API Endpoints ---
 
+@app.get("/", summary="Health Check")
+def health_check():
+    """
+    A simple health check endpoint to confirm the API is running.
+    """
+    return {"status": "ok", "message": "Kognys Research Agent API is running."}
+
 @app.post("/papers", response_model=PaperResponse)
 def create_paper(request: CreatePaperRequest):
     """
