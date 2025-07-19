@@ -16,7 +16,7 @@ if not GOOGLE_API_KEY:
 # A fast model for simple, routine tasks
 fast_llm = ChatGoogleGenerativeAI(
     model=FAST_LLM_MODEL,
-    google_api_key=GOOGLE_API_KEY, # <-- Pass the key here
+    google_api_key=GOOGLE_API_KEY,
     temperature=0.1,
 )
 
