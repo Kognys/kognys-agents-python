@@ -16,23 +16,21 @@ def node(state: KognysState) -> dict:
     
     storage_receipt_id = None
 
-    # Only save to DA if the retrieval was successful and we have a real answer.
     if state.retrieval_status != "No documents found" and final_answer:
         try:
-            # --- START OF FIX ---
-            # Generate the unique, content-addressable ID here
             paper_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, original_question + final_answer))
-            # --- END OF FIX ---
-
+            
             print(f"---PUBLISHER: Saving final answer to Unibase DA with ID: {paper_id} ---")
             
             response_data = upload_paper_to_da(
                 paper_id=paper_id,
                 paper_content=final_answer,
                 original_question=original_question,
-                transcript=state.transcript
+                transcript=state.transcript,
+                source_documents=state.documents
             )
-            if response_data and response_data.get("success"):
+            # Check for the key 'id' as per the partner's DA service response
+            if response_data and response_data.get("id"):
                 storage_receipt_id = response_data.get("id")
 
         except Exception as e:
@@ -40,7 +38,6 @@ def node(state: KognysState) -> dict:
     else:
         print(f"---PUBLISHER: Skipping save to Unibase DA because no answer was generated.---")
 
-    # Now, publish the hash of the content to the blockchain
     if final_answer:
         answer_hash = hashlib.sha256(final_answer.encode()).hexdigest()
         

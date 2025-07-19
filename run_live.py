@@ -1,4 +1,7 @@
 # run_live.py
+# This is a file that runs the Kognys research agent in a live environment.
+# It is used to test the agent in a live environment.
+
 from dotenv import load_dotenv
 load_dotenv() 
 

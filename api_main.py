@@ -114,7 +114,8 @@ def create_paper(request: CreatePaperRequest):
         paper_id=paper_id,
         paper_content=final_answer,
         original_question=request.message,
-        transcript=final_state_result.get("transcript", [])
+        transcript=final_state_result.get("transcript", []),
+        source_documents=final_state_result.get("documents", [])
     )
 
     return PaperResponse(

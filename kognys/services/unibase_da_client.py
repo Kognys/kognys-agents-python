@@ -6,7 +6,7 @@ import uuid
 # The new Base URL for your partner's DA service
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
 
-def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str, transcript: list) -> dict:
+def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str, transcript: list, source_documents: list) -> dict:
     owner_address = os.getenv("MEMBASE_ACCOUNT")
     if not owner_address:
         print("--- DA CLIENT: ERROR - MEMBASE_ACCOUNT not set. ---")
@@ -14,16 +14,18 @@ def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str
 
     upload_url = f"{DA_SERVICE_URL}/api/upload"
     
+    # Add the new 'source_documents' field to the payload
     payload = {
         "id": paper_id,
         "owner": owner_address,
         "message": paper_content,
         "original_question": original_question,
-        "debate_transcript": transcript
+        "debate_transcript": transcript,
+        "source_documents": source_documents
     }
 
     try:
-        print(f"--- DA CLIENT: Uploading paper '{paper_id}' to DA service... ---")
+        print(f"--- DA CLIENT: Uploading paper '{paper_id}' with sources to DA service... ---")
         response = requests.post(upload_url, json=payload)
         response.raise_for_status()
         response_data = response.json()
