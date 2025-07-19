@@ -36,7 +36,9 @@ def node(state: KognysState) -> dict:
     update_dict["transcript"] = append_entry(
         state.transcript,
         agent="Challenger",
-        action="Provided criticisms"
+        action="Provided criticisms",
+        details=f"{len(criticisms)} criticism(s)",
+        output=criticisms[:2]
     )
     
     return update_dict
