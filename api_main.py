@@ -82,16 +82,33 @@ def create_paper(request: CreatePaperRequest):
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=request.message)
     
-    final_state_result = kognys_graph.invoke(initial_state, config=config)
+    try:
+        final_state_result = kognys_graph.invoke(initial_state, config=config)
+    except ValueError as e:
+        # --- THIS IS THE UPDATED LOGIC ---
+        if "Question rejected by validator" in str(e):
+            # Now, we call your custom error handler
+            error_message = generate_error_response(
+                error_type="VALIDATION_FAILED",
+                original_question=request.message
+            )
+            raise HTTPException(status_code=400, detail=error_message)
+        else:
+            print(f"An unexpected ValueError occurred: {e}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred in the agent.")
+
     final_answer = final_state_result.get("final_answer")
     
     if not final_answer or final_state_result.get("retrieval_status") == "No documents found":
-        raise HTTPException(status_code=400, detail="Agent could not generate an answer.")
+        # We can also use the error handler here for consistency
+        error_message = generate_error_response(
+            error_type="NO_DOCUMENTS_FOUND",
+            original_question=request.message
+        )
+        raise HTTPException(status_code=400, detail=error_message)
         
-    # Generate the single, permanent ID here
     paper_id = generate_paper_id(request.message, final_answer)
 
-    # We need to manually call the upload function now from the API after the agent is done
     from kognys.services.unibase_da_client import upload_paper_to_da
     upload_paper_to_da(
         paper_id=paper_id,
