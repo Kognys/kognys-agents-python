@@ -1,8 +1,7 @@
 # kognys/agents/orchestrator.py
-import os
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from kognys.config import powerful_llm
 from kognys.graph.state import KognysState
 
 class OrchestratorResponse(BaseModel):
@@ -36,12 +35,7 @@ _PROMPT = ChatPromptTemplate.from_messages(
 
 def node(state: KognysState) -> dict:
     print("---ORCHESTRATOR: Moderating the debate and deciding next step...---")
-    _llm = ChatGoogleGenerativeAI(
-        model=os.getenv("POWERFUL_LLM_MODEL"),
-        temperature=0,
-        convert_system_message_to_human=True
-    )
-    _structured_llm = _llm.with_structured_output(OrchestratorResponse)
+    _structured_llm = powerful_llm.with_structured_output(OrchestratorResponse)
     _chain = _PROMPT | _structured_llm
 
     # Handle the case where retrieval fails and we come here directly

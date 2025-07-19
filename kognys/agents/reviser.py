@@ -1,7 +1,6 @@
 # kognys/agents/reviser.py
-import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 
 # --- PROMPT HAS BEEN UPDATED ---
@@ -26,12 +25,7 @@ def node(state: KognysState) -> dict:
     """
     Revises the research question into a better search query based on criticisms.
     """
-    _llm = ChatGoogleGenerativeAI(
-        model=os.getenv("POWERFUL_LLM_MODEL"),
-        temperature=0,
-        convert_system_message_to_human=True
-    )
-    _chain = _PROMPT | _llm
+    _chain = _PROMPT | fast_llm
 
 
     if not state.criticisms:

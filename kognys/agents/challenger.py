@@ -1,7 +1,6 @@
 # kognys/agents/challenger.py
-import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 
 _PROMPT = ChatPromptTemplate.from_messages(
@@ -21,12 +20,7 @@ def node(state: KognysState) -> dict:
     Generates criticisms for the draft answer.
     """
     # Configure the LLM to *always* return JSON matching our Pydantic model
-    _llm = ChatGoogleGenerativeAI(
-        model=os.getenv("POWERFUL_LLM_MODEL"),
-        temperature=0.1,
-        convert_system_message_to_human=True
-    )
-    _chain = _PROMPT | _llm
+    _chain = _PROMPT | fast_llm
 
     response = _chain.invoke({
         "question": state.validated_question,
