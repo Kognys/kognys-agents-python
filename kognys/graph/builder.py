@@ -2,7 +2,7 @@
 from langgraph.graph import StateGraph, END
 from kognys.graph.state import KognysState
 
-# Import all agents, including the new reviser
+# Import all agents, including the new summarizer
 from kognys.agents.input_validator import node as input_validator
 from kognys.agents.retriever import node as retriever
 from kognys.agents.synthesizer import node as synthesizer
@@ -24,6 +24,7 @@ _graph.add_node("checklist", checklist)
 _graph.add_node("orchestrator", orchestrator)
 _graph.add_node("publisher", publisher)
 _graph.add_node("reviser", reviser)
+_graph.add_node("summarizer", summarizer)
 
 # --- Define the graph's edges ---
 _graph.set_entry_point("input_validator")
@@ -33,16 +34,13 @@ _graph.add_edge("challenger", "checklist")
 _graph.add_edge("orchestrator", "publisher")
 _graph.add_edge("publisher", END)
 _graph.add_edge("summarizer", "synthesizer")
-
 _graph.add_edge("reviser", "retriever")
 
 # --- Conditional Edge After Retrieval ---
 def route_after_retrieval(state: KognysState) -> str:
     if state.retrieval_status == "No documents found":
-        # If no docs, go directly to the orchestrator to give a final response
         return "orchestrator"
     else:
-        # If docs are found, proceed with the debate
         return "synthesizer"
 
 _graph.add_conditional_edges(
@@ -56,21 +54,15 @@ _graph.add_conditional_edges(
 
 # --- Define the smarter conditional routing ---
 def route_after_checklist(state: KognysState) -> str:
-    """
-    Decides the next step after the checklist agent has run.
-    """
-    # If the answer is sufficient, we're done with the debate.
     if state.is_sufficient:
         return "orchestrator"
     
-    # If there are criticisms, check if they are about document relevance.
-    # This is a simple heuristic; a more robust check could use an LLM call.
     if any("documents" in c.lower() or "sources" in c.lower() for c in state.criticisms):
-        print("---DECISION: Documents are irrelevant. Revising question.---")
         return "reviser"
     else:
-        print("---DECISION: Answer needs refinement. Looping back to synthesizer.---")
-    return "summarizer"
+        # Loop to our new summarizer first.
+        print("---DECISION: Answer needs refinement. Summarizing context...")
+        return "summarizer"
 
 _graph.add_conditional_edges(
     "checklist",
