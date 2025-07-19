@@ -11,6 +11,7 @@ from kognys.agents.checklist import node as checklist
 from kognys.agents.orchestrator import node as orchestrator
 from kognys.agents.publisher import node as publisher
 from kognys.agents.reviser import node as reviser
+from kognys.agents.summarizer import node as summarizer
 
 _graph = StateGraph(KognysState)
 
@@ -22,7 +23,7 @@ _graph.add_node("challenger", challenger)
 _graph.add_node("checklist", checklist)
 _graph.add_node("orchestrator", orchestrator)
 _graph.add_node("publisher", publisher)
-_graph.add_node("reviser", reviser) # <-- Add the new node
+_graph.add_node("reviser", reviser)
 
 # --- Define the graph's edges ---
 _graph.set_entry_point("input_validator")
@@ -31,6 +32,7 @@ _graph.add_edge("synthesizer", "challenger")
 _graph.add_edge("challenger", "checklist")
 _graph.add_edge("orchestrator", "publisher")
 _graph.add_edge("publisher", END)
+_graph.add_edge("summarizer", "synthesizer")
 
 _graph.add_edge("reviser", "retriever")
 
@@ -68,7 +70,7 @@ def route_after_checklist(state: KognysState) -> str:
         return "reviser"
     else:
         print("---DECISION: Answer needs refinement. Looping back to synthesizer.---")
-        return "synthesizer"
+    return "summarizer"
 
 _graph.add_conditional_edges(
     "checklist",
@@ -76,7 +78,7 @@ _graph.add_conditional_edges(
     {
         "orchestrator": "orchestrator",
         "reviser": "reviser",
-        "synthesizer": "synthesizer"
+        "summarizer": "summarizer"
     }
 )
 

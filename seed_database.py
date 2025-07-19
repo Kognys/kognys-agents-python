@@ -10,7 +10,7 @@ load_dotenv()
 MONGO_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("VECTOR_DB", "kognys")
 COLLECTION_NAME = os.getenv("VECTOR_COL", "research_docs")
-DATA_FILE_PATH = "data/research_data.json" # <-- Path to our new data file
+DATA_FILE_PATH = "data/research_data.json"
 
 def seed():
     """

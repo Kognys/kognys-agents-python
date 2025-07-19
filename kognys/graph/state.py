@@ -32,10 +32,15 @@ class KognysState(BaseModel):
         default_factory=list,
         description="A list of criticisms or identified gaps from the ChallengerAgent."
     )
-    revisions: int = Field(default=0, description="A counter for debate revisions.") # <-- ADD THIS LINE
+    revisions: int = Field(default=0, description="A counter for debate revisions.")
     is_sufficient: bool = Field(
         default=False,
         description="A flag set by the ChecklistAgent indicating if the answer meets all criteria."
+    )
+
+    context_summary: str | None = Field(
+        default=None,
+        description="A summary of documents and criticisms for the revision process."
     )
 
     # --- Phase 3 & 4: Finalization ---

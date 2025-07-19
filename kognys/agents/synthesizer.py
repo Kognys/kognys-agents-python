@@ -1,10 +1,9 @@
 # kognys/agents/synthesizer.py
-
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from kognys.graph.state import KognysState
 
-# Create two different prompts: one for the initial draft, and one for revising.
+# This prompt is used for the very first draft, using the full document context.
 initial_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -17,59 +16,54 @@ initial_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# This new, more efficient prompt is used for all revisions.
+# It uses the focused summary instead of the full documents and criticism history.
 revision_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are a research reviser. Your task is to rewrite the draft answer to fully address the provided "
-            "criticisms. Use the original documents as evidence. The revised answer should be a complete, "
-            "standalone piece of text. Do not just address the criticisms directly, but integrate the "
-            "feedback into a new and improved version of the answer."
+            "You are a research reviser. Your task is to rewrite the draft answer to fully address the key points "
+            "from the provided context summary. The summary contains the most important facts from source documents and the "
+            "main criticisms that need to be fixed. Create a new, standalone answer."
         ),
         (
             "human",
-            "Original Question: {question}\n\n"
-            "Original Documents:\n{documents}\n\n"
-            "Previous Draft Answer:\n{draft_answer}\n\n"
-            "Criticisms to Address:\n{criticisms}"
+            "Context Summary:\n{summary}\n\n"
+            "Previous Draft Answer:\n{draft_answer}"
         ),
     ]
 )
 
 def node(state: KognysState) -> dict:
     """
-    Conditionally synthesizes or revises an answer based on the graph state.
+    Conditionally synthesizes an initial answer or revises an existing one
+    based on a focused context summary.
     """
-
-    # Configure the LLM to *always* return JSON matching our Pydantic model
+    # Initialize the LLM client here for robust deployment
     _llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
-
-    # The chains are now separate
-    initial_chain = initial_prompt | _llm
-    revision_chain = revision_prompt | _llm
 
     question = state.validated_question
     documents = state.documents
     draft_answer = state.draft_answer
-    criticisms = state.criticisms
+    context_summary = state.context_summary # Get the summary from the state
 
-    documents_str = "\n\n".join(
-        [f"Content: {doc['content']} (Score: {doc['score']:.2f})" for doc in documents]
-    )
-
-    if criticisms:
-        print("---SYNTHESIZER: Revising draft based on criticisms...---")
-        response = revision_chain.invoke({
-            "question": question,
-            "documents": documents_str,
+    # If a summary exists, it means we are in a revision loop
+    if context_summary:
+        print("---SYNTHESIZER: Revising draft based on a focused summary...---")
+        chain = revision_prompt | _llm
+        response = chain.invoke({
+            "summary": context_summary,
             "draft_answer": draft_answer,
-            "criticisms": "\n".join(criticisms)
         })
+    # Otherwise, it's the first attempt and we use the full documents
     else:
         print("---SYNTHESIZER: Writing initial draft...---")
-        response = initial_chain.invoke({
+        chain = initial_prompt | _llm
+        documents_str = "\n\n".join([doc.get('content', '') for doc in documents])
+        response = chain.invoke({
             "question": question,
             "documents": documents_str
         })
 
-    return {"draft_answer": response.content, "criticisms": []}
+    # Clear the old criticisms and summary after they've been used
+    return {"draft_answer": response.content, "criticisms": [], "context_summary": None}
