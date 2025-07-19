@@ -8,7 +8,7 @@ python-dotenv
 requests
 openai
 langgraph
-langchain-openai
+langchain-google-genai
 
 # Testing
 pytest

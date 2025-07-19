@@ -1,5 +1,6 @@
+import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from kognys.graph.state import KognysState
 
 # This prompt instructs the LLM to act as a pre-processor for the main synthesizer
@@ -28,7 +29,11 @@ def node(state: KognysState) -> dict:
     print("---SUMMARIZER: Creating a focused summary of documents and criticisms...---")
     
     # Initialize the LLM client here for lazy initialization
-    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _llm = ChatGoogleGenerativeAI(
+        model=os.getenv("POWERFUL_LLM_MODEL"),
+        temperature=0,
+        convert_system_message_to_human=True
+    )
     _chain = _PROMPT | _llm
 
     # We don't need to truncate here because the summarizer's job *is* to reduce the context

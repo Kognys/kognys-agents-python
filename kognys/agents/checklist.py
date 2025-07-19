@@ -1,7 +1,8 @@
 # kognys/agents/checklist.py
+import os
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from kognys.graph.state import KognysState
 
 class ChecklistResponse(BaseModel):
@@ -33,7 +34,11 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-_llm = ChatOpenAI(model="gpt-4o", temperature=0) # Use a powerful model for this final decision
+_llm = ChatGoogleGenerativeAI(
+    model=os.getenv("POWERFUL_LLM_MODEL"),
+    temperature=0,
+    convert_system_message_to_human=True
+) # Use a powerful model for this final decision
 _structured_llm = _llm.with_structured_output(ChecklistResponse)
 _chain = _PROMPT | _structured_llm
 

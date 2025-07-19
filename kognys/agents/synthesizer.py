@@ -1,6 +1,7 @@
 # kognys/agents/synthesizer.py
+import os
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from kognys.graph.state import KognysState
 
 _PROMPT = ChatPromptTemplate.from_messages(
@@ -22,7 +23,11 @@ _PROMPT = ChatPromptTemplate.from_messages(
 
 def node(state: KognysState) -> dict:
     print("---SYNTHESIZER: Writing/Revising draft...---")
-    _llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
+    _llm = ChatGoogleGenerativeAI(
+        model=os.getenv("POWERFUL_LLM_MODEL"),
+        temperature=0.7,
+        convert_system_message_to_human=True
+    )
     _chain = _PROMPT | _llm
 
     documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])

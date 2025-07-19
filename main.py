@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from kognys.graph.builder import kognys_graph
 
-# Load environment variables (like OPENAI_API_KEY)
+# Load environment variables (like GOOGLE_API_KEY)
 load_dotenv()
 
 def run_research(question: str):
@@ -26,8 +26,8 @@ def run_research(question: str):
 
 
 if __name__ == "__main__":
-    if not os.getenv("OPENAI_API_KEY"):
-        print("❌ OPENAI_API_KEY is not set. Please create a .env file.")
+    if not os.getenv("GOOGLE_API_KEY"):
+        print("❌ GOOGLE_API_KEY is not set. Please create a .env file.")
     else:
         sample_question = "What are the latest advancements in battery technology for electric vehicles?"
         run_research(sample_question)

@@ -1,8 +1,8 @@
 # kognys/agents/input_validator.py
-
+import os
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from kognys.graph.state import KognysState
 
@@ -32,7 +32,11 @@ def node(state: KognysState) -> dict:
     """
 
     # Configure the LLM to *always* return JSON matching our Pydantic model
-    _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    _llm = ChatGoogleGenerativeAI(
+        model=os.getenv("POWERFUL_LLM_MODEL"),
+        temperature=0,
+        convert_system_message_to_human=True
+    )
     _structured_llm = _llm.with_structured_output(ValidatorResponse)
 
     # Construct the chain

@@ -1,4 +1,6 @@
-from langchain_openai import ChatOpenAI
+# kognys/services/error_handler.py
+import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
 def generate_error_response(error_type: str, original_question: str) -> str:
@@ -23,7 +25,11 @@ def generate_error_response(error_type: str, original_question: str) -> str:
         return "An unexpected error occurred."
 
     prompt = ChatPromptTemplate.from_template(prompt_template)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
+    llm = ChatGoogleGenerativeAI(
+        model=os.getenv("POWERFUL_LLM_MODEL"),
+        temperature=0.5,
+        convert_system_message_to_human=True
+    )
     chain = prompt | llm
     
     response = chain.invoke({"question": original_question})
