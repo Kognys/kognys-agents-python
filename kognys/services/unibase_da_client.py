@@ -15,7 +15,7 @@ def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str
     upload_url = f"{DA_SERVICE_URL}/api/upload"
     
     payload = {
-        "id": paper_id, # <-- Use the ID that was passed in
+        "id": paper_id,
         "owner": owner_address,
         "message": paper_content,
         "original_question": original_question

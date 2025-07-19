@@ -13,3 +13,4 @@ langchain-google-genai
 # Testing
 pytest
 httpx
+web3
