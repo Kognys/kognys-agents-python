@@ -15,7 +15,7 @@ def main():
     """
     # 1. Register the agent identity before starting the workflow
     print("\n--- AGENT REGISTRATION ---")
-    agent_id = os.getenv("MEMBASE_ID", "kognys-research-agent-test-001")
+    agent_id = os.getenv("MEMBASE_ID", "kognys-research-agent-001")
     is_registered = register_agent_if_not_exists(
         agent_id=agent_id,
         name="Kognys Research Agent",
@@ -55,14 +55,16 @@ def main():
         if 'validated_question' in state_update:
             print(f"  - Validated Question: \"{state_update['validated_question']}\"")
         if 'documents' in state_update:
-            print(f"  - Retrieved {len(state_update['documents'])} documents.")
+            # Check if documents list is empty, which happens on a re-search
+            if state_update['documents']:
+                 print(f"  - Retrieved {len(state_update['documents'])} documents.")
+            else:
+                print("  - Cleared documents for new search.")
         if 'draft_answer' in state_update:
             print(f"  - Draft Answer: \"{state_update['draft_answer']}\"")
         if 'criticisms' in state_update and state_update['criticisms']:
             print(f"  - Criticisms Found: {state_update['criticisms']}")
-        if 'is_sufficient' in state_update:
-            print(f"  - Sufficiency Check: {state_update['is_sufficient']}")
-        if 'final_answer' in state_update:
+        if 'final_answer' in state_update and state_update['final_answer']:
             print("\n" + "="*60)
             print("✅ FINAL ANSWER")
             print("="*60)
