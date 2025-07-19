@@ -37,6 +37,11 @@ class KognysState(BaseModel):
         description="A counter for how many revision cycles have occurred."
     )
 
+    transcript: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured log of every agent step in the debate."
+    )
+
     # --- Final Output ---
     final_answer: str | None = Field(
         default=None,

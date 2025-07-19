@@ -81,7 +81,8 @@ def create_paper(request: CreatePaperRequest):
     upload_paper_to_da(
         paper_id=paper_id,
         paper_content=final_answer,
-        original_question=request.message
+        original_question=request.message,
+        transcript=final_state_result.get("transcript", [])
     )
 
     return PaperResponse(

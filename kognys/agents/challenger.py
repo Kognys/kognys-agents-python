@@ -2,6 +2,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import fast_llm
 from kognys.graph.state import KognysState
+from kognys.utils.transcript import append_entry
 
 _PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -30,4 +31,12 @@ def node(state: KognysState) -> dict:
     # Simple parsing for now, can be improved with structured output
     criticisms = [c.strip() for c in response.content.split('*') if c.strip()]
     
-    return {"criticisms": criticisms}
+    update_dict = {"criticisms": criticisms}
+    
+    update_dict["transcript"] = append_entry(
+        state.transcript,
+        agent="Challenger",
+        action="Provided criticisms"
+    )
+    
+    return update_dict

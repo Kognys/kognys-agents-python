@@ -4,6 +4,7 @@ import uuid
 from kognys.graph.state import KognysState
 from kognys.services.unibase_da_client import upload_paper_to_da
 from kognys.services.blockchain_client import publish_hash_on_chain
+from kognys.utils.transcript import append_entry
 
 def node(state: KognysState) -> dict:
     """
@@ -28,7 +29,8 @@ def node(state: KognysState) -> dict:
             response_data = upload_paper_to_da(
                 paper_id=paper_id,
                 paper_content=final_answer,
-                original_question=original_question
+                original_question=original_question,
+                transcript=state.transcript
             )
             if response_data and response_data.get("success"):
                 storage_receipt_id = response_data.get("id")
@@ -55,4 +57,10 @@ def node(state: KognysState) -> dict:
             print("❌ On-chain verification failed.")
         print("="*50 + "\n")
     
-    return {}
+    return {
+        "transcript": append_entry(
+            state.transcript,
+            agent="Publisher",
+            action="Uploaded transcript + answer to DA"
+        )
+    }

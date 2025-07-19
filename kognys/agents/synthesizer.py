@@ -2,6 +2,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import powerful_llm
 from kognys.graph.state import KognysState
+from kognys.utils.transcript import append_entry
 
 _PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -33,4 +34,13 @@ def node(state: KognysState) -> dict:
         "criticisms": criticisms_str
     })
     
-    return {"draft_answer": response.content, "criticisms": []}
+    update_dict = {"draft_answer": response.content, "criticisms": []}
+    
+    update_dict["transcript"] = append_entry(
+        state.transcript,
+        agent="Synthesizer",
+        action=f"Drafted answer v{state.revisions+1}",
+        output=hash(response.content)
+    )
+    
+    return update_dict

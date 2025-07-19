@@ -3,6 +3,7 @@ from kognys.graph.state import KognysState
 from kognys.services.openalex_client import search_works
 from kognys.services.arxiv_client import search_arxiv
 from kognys.services.semantic_scholar_client import search_semantic_scholar
+from kognys.utils.transcript import append_entry
 
 def node(state: KognysState) -> dict:
     """
@@ -23,7 +24,16 @@ def node(state: KognysState) -> dict:
     
     if not combined_docs:
         print("---RETRIEVER: No documents found from any source.---")
-        return {"documents": [], "retrieval_status": "No documents found"}
+        update_dict = {"documents": [], "retrieval_status": "No documents found"}
+    else:
+        print(f"---RETRIEVER: Found {len(combined_docs)} total documents from all sources.---")
+        update_dict = {"documents": combined_docs, "retrieval_status": "Documents found"}
     
-    print(f"---RETRIEVER: Found {len(combined_docs)} total documents from all sources.---")
-    return {"documents": combined_docs, "retrieval_status": "Documents found"}
+    update_dict["transcript"] = append_entry(
+        state.transcript,
+        agent="Retriever",
+        action="Retrieved documents",
+        details=f"{len(combined_docs)} docs"
+    )
+    
+    return update_dict

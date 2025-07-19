@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from kognys.config import fast_llm
 from kognys.graph.state import KognysState
+from kognys.utils.transcript import append_entry
 
 # 1. Define the desired JSON output structure using Pydantic
 class ValidatorResponse(BaseModel):
@@ -42,6 +43,15 @@ def node(state: KognysState) -> dict:
         raise ValueError("Question rejected by validator — ask user to rephrase.")
 
     # 5. Return a dictionary of the state fields to update
-    return {
+    update_dict = {
         "validated_question": response.revised_question or state.question
     }
+    
+    update_dict["transcript"] = append_entry(
+        state.transcript,
+        agent="InputValidator",
+        action="Validated / rewrote question",
+        output=response.revised_question or state.question
+    )
+    
+    return update_dict

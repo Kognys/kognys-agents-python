@@ -1,3 +1,4 @@
+# kognys/agents/summarizer.py
 from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import fast_llm
 from kognys.graph.state import KognysState

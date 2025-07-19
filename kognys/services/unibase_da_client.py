@@ -6,7 +6,7 @@ import uuid
 # The new Base URL for your partner's DA service
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
 
-def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str) -> dict:
+def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str, transcript: list) -> dict:
     owner_address = os.getenv("MEMBASE_ACCOUNT")
     if not owner_address:
         print("--- DA CLIENT: ERROR - MEMBASE_ACCOUNT not set. ---")
@@ -18,7 +18,8 @@ def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str
         "id": paper_id,
         "owner": owner_address,
         "message": paper_content,
-        "original_question": original_question
+        "original_question": original_question,
+        "debate_transcript": transcript
     }
 
     try:

@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import powerful_llm
 from kognys.graph.state import KognysState
+from kognys.utils.transcript import append_entry
 
 class OrchestratorResponse(BaseModel):
     decision: str = Field(description="The next action. Must be one of: 'REVISE', 'RESEARCH_AGAIN', or 'FINALIZE'.")
@@ -40,24 +41,33 @@ def node(state: KognysState) -> dict:
 
     # Handle the case where retrieval fails and we come here directly
     if state.retrieval_status == "No documents found":
-        return {"final_answer": "I am sorry, but I could not find any relevant information to answer your question."}
+        update_dict = {"final_answer": "I am sorry, but I could not find any relevant information to answer your question."}
+    else:
+        documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])
+        criticisms_str = "\n".join(state.criticisms) if state.criticisms else "None"
+        
+        response = _chain.invoke({
+            "revisions": state.revisions,
+            "question": state.validated_question,
+            "documents": documents_str,
+            "answer": state.draft_answer,
+            "criticisms": criticisms_str
+        })
+        
+        print(f"---ORCHESTRATOR DECISION: {response.decision} ---\nReason: {response.explanation}")
 
-    documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])
-    criticisms_str = "\n".join(state.criticisms) if state.criticisms else "None"
+        if response.decision == "RESEARCH_AGAIN":
+            update_dict = { "validated_question": response.next_query, "documents": [], "revisions": state.revisions + 1 }
+        elif response.decision == "FINALIZE":
+            update_dict = {"final_answer": response.final_answer}
+        else: # REVISE
+            update_dict = {"revisions": state.revisions + 1}
     
-    response = _chain.invoke({
-        "revisions": state.revisions,
-        "question": state.validated_question,
-        "documents": documents_str,
-        "answer": state.draft_answer,
-        "criticisms": criticisms_str
-    })
+    update_dict["transcript"] = append_entry(
+        state.transcript,
+        agent="Orchestrator",
+        action="Made decision",
+        output=response.decision if 'response' in locals() else "No documents found"
+    )
     
-    print(f"---ORCHESTRATOR DECISION: {response.decision} ---\nReason: {response.explanation}")
-
-    if response.decision == "RESEARCH_AGAIN":
-        return { "validated_question": response.next_query, "documents": [], "revisions": state.revisions + 1 }
-    elif response.decision == "FINALIZE":
-        return {"final_answer": response.final_answer}
-    else: # REVISE
-        return {"revisions": state.revisions + 1}
+    return update_dict
