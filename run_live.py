@@ -39,7 +39,8 @@ def main():
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=research_question)
 
-    # 4. Use .stream() to see the output from each node as it runs
+    # 4. Stream node-by-node output
+    final_transcript = []
     for i, chunk in enumerate(kognys_graph.stream(initial_state, config=config)):
         if not chunk:
             continue
@@ -64,11 +65,22 @@ def main():
             print(f"  - Draft Answer: \"{state_update['draft_answer']}\"")
         if 'criticisms' in state_update and state_update['criticisms']:
             print(f"  - Criticisms Found: {state_update['criticisms']}")
+        # --- show each transcript entry as it arrives -----------
+        if 'transcript' in state_update:
+            latest = state_update['transcript'][-1]
+            print(f"  - Transcript += {latest['agent']} → {latest['action']}")
+            final_transcript = state_update['transcript']   # keep for later
         if 'final_answer' in state_update and state_update['final_answer']:
             print("\n" + "="*60)
             print("✅ FINAL ANSWER")
             print("="*60)
             print(state_update['final_answer'])
+    # --- after the loop, print the whole debate log ------------
+    if final_transcript:
+        print("\n===== COMPLETE TRANSCRIPT =====")
+        for step in final_transcript:
+            summary = step.get('details') or step.get('output', '')
+            print(f"{step['agent']}: {step['action']} | {summary}")
 
 if __name__ == "__main__":
     main()
