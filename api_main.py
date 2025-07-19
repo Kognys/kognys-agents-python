@@ -1,6 +1,6 @@
 # api_main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
 import os
@@ -43,6 +43,21 @@ app = FastAPI(
     title="Kognys Research Agent API",
     description="An API to generate research papers and manage them with Unibase DA.",
     lifespan=lifespan
+)
+
+# ── CORS ───────────────────────────────────────────────────────────────
+# Allow your teammate’s local Vue/React dev server (port 8080) to hit this API.
+# Add other origins (comma-separated) to ALLOWED_ORIGINS env var if needed.
+origins = (
+    os.getenv("ALLOWED_ORIGINS", "http://localhost:8080").split(",")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- API Models ---
