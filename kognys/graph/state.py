@@ -7,10 +7,11 @@ class KognysState(BaseModel):
     Represents the shared state of the Kognys research graph.
     Each field is a channel that agents can read from and write to.
     """
-    # Initial input
+    # --- Input and Core State ---
     question: str
+    paper_id: str | None = Field(default=None, description="The unique, content-addressable ID for the final paper.")
 
-    # --- Phase 1: Validation & Retrieval ---
+    # --- Research and Debate Loop State ---
     validated_question: str | None = Field(
         default=None,
         description="The validated and potentially revised question for research."
@@ -23,20 +24,21 @@ class KognysState(BaseModel):
         default=None,
         description="A message indicating the status of the document retrieval."
     )
-
-    # --- Phase 2: Chain-of-Debate ---
     draft_answer: str | None = Field(
         default=None,
-        description="The initial answer synthesized from the retrieved documents."
+        description="The current draft answer being debated."
     )
     criticisms: List[str] = Field(
         default_factory=list,
-        description="A list of criticisms or identified gaps from the ChallengerAgent."
+        description="A list of criticisms for the current draft."
     )
-    revisions: int = Field(default=0, description="A counter for debate revisions.")
+    revisions: int = Field(
+        default=0, 
+        description="A counter for how many revision cycles have occurred."
+    )
 
-    # --- Phase 3 & 4: Finalization ---
+    # --- Final Output ---
     final_answer: str | None = Field(
         default=None,
-        description="The final, refined answer after the debate concludes."
+        description="The final, conclusive answer produced by the Orchestrator."
     )

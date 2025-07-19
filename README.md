@@ -26,7 +26,7 @@ This project is a submission for the BNB AI Hackathon (Unibase Track).
   OPENAI_API_KEY="sk-..."
   MEMBASE_ID="kognys-agent-001"
   MEMBASE_ACCOUNT="<YOUR_BNB_TESTNET_ACCOUNT_ADDRESS>"
-  DA_SERVICE_URL="[https://kognys-da-production.up.railway.app](https://kognys-da-production.up.railway.app)"
+  DA_SERVICE_URL="YOUR_DA_SERVICE_URL"
   ```
 
 ### Local Setup

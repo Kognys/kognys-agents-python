@@ -19,6 +19,10 @@ from kognys.services.membase_client import register_agent_if_not_exists
 from kognys.services.unibase_da_client import download_paper_from_da
 from kognys.services.error_handler import generate_error_response
 
+def generate_paper_id(question: str, content: str) -> str:
+    """Generates a consistent, unique ID for a paper."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, question + content))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("--- API STARTUP: REGISTERING AGENT ---")
@@ -63,29 +67,25 @@ def create_paper(request: CreatePaperRequest):
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=request.message)
     
-    final_state_result = None
-    try:
-        final_state_result = kognys_graph.invoke(initial_state, config=config)
-    except ValueError as e:
-        # --- UPDATED: Call the new error handler function ---
-        ai_error_message = generate_error_response(
-            error_type="VALIDATION_FAILED", 
-            original_question=request.message
-        )
-        raise HTTPException(status_code=400, detail=ai_error_message)
-        
+    final_state_result = kognys_graph.invoke(initial_state, config=config)
     final_answer = final_state_result.get("final_answer")
     
     if not final_answer or final_state_result.get("retrieval_status") == "No documents found":
-        # --- UPDATED: Call the new error handler function ---
-        ai_error_message = generate_error_response(
-            error_type="NO_DOCUMENTS_FOUND", 
-            original_question=request.message
-        )
-        raise HTTPException(status_code=404, detail=ai_error_message)
+        raise HTTPException(status_code=400, detail="Agent could not generate an answer.")
         
+    # Generate the single, permanent ID here
+    paper_id = generate_paper_id(request.message, final_answer)
+
+    # We need to manually call the upload function now from the API after the agent is done
+    from kognys.services.unibase_da_client import upload_paper_to_da
+    upload_paper_to_da(
+        paper_id=paper_id,
+        paper_content=final_answer,
+        original_question=request.message
+    )
+
     return PaperResponse(
-        paper_id=config["configurable"]["thread_id"],
+        paper_id=paper_id,
         paper_content=final_answer
     )
 

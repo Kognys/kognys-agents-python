@@ -6,36 +6,28 @@ import uuid
 # The new Base URL for your partner's DA service
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
 
-def upload_paper_to_da(paper_content: str, original_question: str) -> dict:
-    """
-    Uploads the generated research paper directly to the new Unibase DA service.
-    """
+def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str) -> dict:
     owner_address = os.getenv("MEMBASE_ACCOUNT")
     if not owner_address:
-        print("--- DA CLIENT: ERROR - MEMBASE_ACCOUNT environment variable not set. Cannot upload. ---")
+        print("--- DA CLIENT: ERROR - MEMBASE_ACCOUNT not set. ---")
         return {}
 
     upload_url = f"{DA_SERVICE_URL}/api/upload"
     
-    # Use a unique identifier for the paper, like a hash of the content
-    paper_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, original_question + paper_content))
-
     payload = {
-        "id": paper_id,
+        "id": paper_id, # <-- Use the ID that was passed in
         "owner": owner_address,
         "message": paper_content,
         "original_question": original_question
     }
 
     try:
-        print(f"--- DA CLIENT: Uploading paper '{paper_id}' to the DA service... ---")
+        print(f"--- DA CLIENT: Uploading paper '{paper_id}' to DA service... ---")
         response = requests.post(upload_url, json=payload)
         response.raise_for_status()
-
         response_data = response.json()
-        print(f"--- DA CLIENT: Successfully uploaded paper to DA. Response: {response_data} ---")
+        print(f"--- DA CLIENT: Successfully uploaded paper. Response: {response_data} ---")
         return response_data
-
     except requests.exceptions.RequestException as e:
         print(f"--- DA CLIENT: Error uploading to DA service: {e} ---")
         return {}

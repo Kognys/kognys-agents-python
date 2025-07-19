@@ -36,9 +36,9 @@ def route_after_retrieval(state: KognysState) -> str:
 def route_after_orchestrator(state: KognysState) -> str:
     if state.final_answer:
         return "publisher"
-    elif not state.documents:
+    elif not state.documents: # This is the signal to research again
         return "retriever"
-    else: # Revise
+    else: # This is the signal to revise
         return "synthesizer"
 
 _graph.add_conditional_edges("retriever", route_after_retrieval, {
