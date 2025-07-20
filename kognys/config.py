@@ -28,3 +28,18 @@ powerful_llm = ChatGoogleGenerativeAI(
 )
 
 print(f"✅ LLM clients initialized. Fast model: {FAST_LLM_MODEL}, Powerful model: {POWERFUL_LLM_MODEL}")
+
+# AIP Agent Configuration
+ENABLE_AIP_AGENTS = os.getenv("ENABLE_AIP_AGENTS", "false").lower() == "true"
+AIP_AGENT_PREFIX = os.getenv("AIP_AGENT_PREFIX", "kognys")
+AIP_USE_ROUTING = os.getenv("AIP_USE_ROUTING", "true").lower() == "true"
+AIP_AGENT_TIMEOUT = int(os.getenv("AIP_AGENT_TIMEOUT", "30"))  # seconds
+
+# AIP Agent IDs
+AIP_RETRIEVER_ID = f"{AIP_AGENT_PREFIX}-retriever"
+AIP_SYNTHESIZER_ID = f"{AIP_AGENT_PREFIX}-synthesizer"
+AIP_CHALLENGER_ID = f"{AIP_AGENT_PREFIX}-challenger"
+AIP_ORCHESTRATOR_ID = f"{AIP_AGENT_PREFIX}-orchestrator"
+
+if ENABLE_AIP_AGENTS:
+    print(f"✅ AIP Agents enabled. Prefix: {AIP_AGENT_PREFIX}, Routing: {AIP_USE_ROUTING}")
