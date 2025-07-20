@@ -53,4 +53,7 @@ def node(state: KognysState) -> dict:
     else:
         print("---PUBLISHER: Skipping storage because no answer was generated.---")
 
-    return { "transcript": append_entry(state.transcript, agent="Publisher", action="Stored, archived, and finished task") }
+    return { 
+        "final_answer": final_answer,  # Preserve the final answer
+        "transcript": append_entry(state.transcript, agent="Publisher", action="Stored, archived, and finished task") 
+    }

@@ -97,10 +97,17 @@ class UnifiedExecutor:
                             })
                     
                     elif node_name == "orchestrator":
-                        print(f"📝 Emitting orchestrator_decision event")
+                        # Extract decision from the latest transcript entry
+                        decision = "unknown"
+                        if state.get("transcript") and len(state["transcript"]) > 0:
+                            latest_entry = state["transcript"][-1]
+                            if latest_entry.get("agent") == "Orchestrator":
+                                decision = latest_entry.get("output", "unknown")
+                        
+                        print(f"📝 Emitting orchestrator_decision event: {decision}")
                         self._emit_event("orchestrator_decision", {
-                            "decision": state.get("orchestrator_decision", "unknown"),
-                            "status": "Orchestrator made decision on next step"
+                            "decision": decision,
+                            "status": f"Orchestrator decided: {decision}"
                         })
                     
                     elif node_name == "publisher":

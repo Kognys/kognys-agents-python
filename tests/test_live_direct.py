@@ -1,6 +1,6 @@
-# run_live.py
-# This is a file that runs the Kognys research agent in a live environment.
-# It is used to test the agent in a live environment.
+# test_live_direct.py
+# This file runs the Kognys research agent using direct graph execution.
+# It bypasses the API and directly calls the graph for testing purposes.
 
 from dotenv import load_dotenv
 load_dotenv() 
@@ -13,8 +13,8 @@ from kognys.services.membase_client import register_agent_if_not_exists
 
 def main():
     """
-    Registers the agent identity and then runs a live, end-to-end test
-    of the Kognys research agent.
+    Registers the agent identity and then runs a direct graph execution test
+    of the Kognys research agent (bypasses API, calls graph directly).
     """
     # 1. Register the agent identity before starting the workflow
     print("\n--- AGENT REGISTRATION ---")
