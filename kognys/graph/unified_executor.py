@@ -191,54 +191,173 @@ class UnifiedExecutor:
     async def execute_streaming(self, initial_state: KognysState, config: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute the graph with streaming events (for SSE)."""
         
-        # Create a queue for events
-        event_queue = queue.Queue()
+        print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
         
-        def event_callback(event_type: str, data: Dict[str, Any]):
-            event_queue.put({
-                "event_type": event_type,
-                "data": data,
-                "timestamp": time.time()
-            })
+        # Emit start event
+        yield {
+            "event_type": "research_started",
+            "data": {
+                "question": initial_state.question,
+                "task_id": config.get("configurable", {}).get("thread_id"),
+                "status": "Starting research process..."
+            },
+            "timestamp": time.time()
+        }
         
-        # Add our callback
-        self.add_event_callback(event_callback)
-        
-        # Start execution in background
-        def run_execution():
-            try:
-                return self.execute_sync(initial_state, config)
-            except Exception as e:
-                event_queue.put({
-                    "event_type": "error",
-                    "data": {"error": str(e)},
-                    "timestamp": time.time()
-                })
-                raise
-        
-        # Start execution thread
-        execution_thread = threading.Thread(target=run_execution)
-        execution_thread.start()
-        
-        # Stream events as they arrive
-        while True:
-            try:
-                # Wait for events with timeout
-                event = event_queue.get(timeout=1.0)
-                yield event
+        try:
+            print(f"📝 Executing graph with async streaming...")
+            
+            final_result = None
+            
+            # Use astream_events directly in the async context (no new event loop)
+            async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
+                kind = event["event"]
                 
-                # If this is a final event, break
-                if event["event_type"] in ["research_completed", "research_failed", "error", "validation_error"]:
-                    break
+                if kind == "on_chain_start":
+                    # A new node is starting to execute
+                    node_name = event["name"]
+                    print(f"🚀 Starting node: {node_name}")
+                
+                elif kind == "on_chain_stream":
+                    # A streaming node is yielding a chunk
+                    chunk = event["data"]["chunk"]
+                    if not chunk:
+                        continue
+                        
+                    # Check for our custom token keys and stream them
+                    if "draft_answer_token" in chunk:
+                        yield {
+                            "event_type": "draft_answer_token",
+                            "data": {"token": chunk["draft_answer_token"]},
+                            "timestamp": time.time()
+                        }
+                    elif "criticism_token" in chunk:
+                        yield {
+                            "event_type": "criticism_token", 
+                            "data": {"token": chunk["criticism_token"]},
+                            "timestamp": time.time()
+                        }
+                    elif "final_answer_token" in chunk:
+                        yield {
+                            "event_type": "final_answer_token",
+                            "data": {"token": chunk["final_answer_token"]}, 
+                            "timestamp": time.time()
+                        }
+
+                elif kind == "on_chain_end":
+                    # A node has finished executing
+                    node_name = event["name"]
+                    state_update = event["data"]["output"]
+                    print(f"🔄 Processing node completion: {node_name}")
                     
-            except queue.Empty:
-                # Check if execution thread is still running
-                if not execution_thread.is_alive():
-                    break
-                continue
-        
-        # Wait for execution thread to finish
-        execution_thread.join(timeout=5.0)
+                    # Emit node completion events
+                    completion_event = self._get_node_completion_event(node_name, state_update)
+                    if completion_event:
+                        yield completion_event
+                    
+                    final_result = state_update # Store the last complete state
+            
+            print(f"📝 Async graph execution completed")
+            
+            # Final check for success
+            if not final_result or not final_result.get("final_answer"):
+                yield {
+                    "event_type": "research_failed",
+                    "data": {
+                        "error": "No final answer generated",
+                        "status": "Research process failed to generate a final answer"
+                    },
+                    "timestamp": time.time()
+                }
+            
+        except Exception as e:
+            print(f"❌ Error in execute_streaming: {e}")
+            # Handle validation errors specifically
+            if isinstance(e, ValueError):
+                yield {
+                    "event_type": "validation_error",
+                    "data": {
+                        "error": str(e),
+                        "status": "Question validation failed",
+                        "suggestion": "Please rephrase your question to be more specific and research-worthy."
+                    },
+                    "timestamp": time.time()
+                }
+            else:
+                yield {
+                    "event_type": "error",
+                    "data": {
+                        "error": str(e),
+                        "status": "An error occurred during research"
+                    },
+                    "timestamp": time.time()
+                }
+                
+    def _get_node_completion_event(self, node_name: str, state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get the appropriate completion event for a node."""
+        if not state:
+            return None
+
+        event_data = {"timestamp": time.time()}
+
+        if node_name == "input_validator" and state.get("validated_question"):
+            event_data.update({
+                "event_type": "question_validated",
+                "data": {
+                    "validated_question": state["validated_question"],
+                    "status": "Question validated and refined"
+                }
+            })
+        elif node_name == "retriever" and state.get("documents"):
+            event_data.update({
+                "event_type": "documents_retrieved",
+                "data": {
+                    "document_count": len(state["documents"]),
+                    "status": f"Retrieved {len(state['documents'])} relevant documents"
+                }
+            })
+        elif node_name == "synthesizer" and state.get("draft_answer"):
+            event_data.update({
+                "event_type": "draft_generated",
+                "data": {
+                    "draft_length": len(state["draft_answer"]),
+                    "status": "Initial draft generated"
+                }
+            })
+        elif node_name == "challenger" and state.get("criticisms"):
+            event_data.update({
+                "event_type": "criticisms_received",
+                "data": {
+                    "criticism_count": len(state["criticisms"]),
+                    "status": f"Received {len(state['criticisms'])} criticisms for improvement"
+                }
+            })
+        elif node_name == "orchestrator":
+            decision = "unknown"
+            if state.get("transcript") and len(state["transcript"]) > 0:
+                latest_entry = state["transcript"][-1]
+                if latest_entry.get("agent") == "Orchestrator":
+                    decision = latest_entry.get("output", "unknown")
+            
+            event_data.update({
+                "event_type": "orchestrator_decision",
+                "data": {
+                    "decision": decision,
+                    "status": f"Orchestrator decided: {decision}"
+                }
+            })
+        elif node_name == "publisher" and state.get("final_answer"):
+            event_data.update({
+                "event_type": "research_completed",
+                "data": {
+                    "final_answer": state["final_answer"],
+                    "status": "Research completed successfully"
+                }
+            })
+        else:
+            return None
+            
+        return event_data
 
 # Create unified executor instance
 unified_executor = UnifiedExecutor(kognys_graph) 
