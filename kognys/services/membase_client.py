@@ -118,6 +118,18 @@ def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
     
     return False
 
+def check_task_exists(task_id: str) -> bool:
+    """Checks if a task exists on the blockchain."""
+    if not API_BASE_URL:
+        return False
+    
+    check_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}"
+    try:
+        response = requests.get(check_url)
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
+
 def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
     """Joins an existing task on the blockchain with retry logic for nonce errors."""
     if not API_BASE_URL:
@@ -134,6 +146,17 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
     print(f"  - Endpoint: POST {task_url}")
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
+    
+    # Wait for task to exist on blockchain (up to 10 seconds)
+    print(f"  - ⏳ Waiting for task to be confirmed on blockchain...")
+    for i in range(10):
+        if check_task_exists(task_id):
+            print(f"  - ✅ Task confirmed to exist (after {i+1}s)")
+            break
+        sleep(1)
+    else:
+        print(f"  - ❌ FAILED: Task '{task_id}' not found after 10 seconds")
+        return False
     
     for attempt in range(max_retries):
         try:
