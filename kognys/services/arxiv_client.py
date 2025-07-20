@@ -1,39 +1,33 @@
+# kognys/services/arxiv_client.py
 import requests
 import xml.etree.ElementTree as ET
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
-def search_arxiv(query: str, k: int = 3) -> list[dict]:
-    """
-    Searches the arXiv API for papers related to the query.
-    """
-    params = {
-        "search_query": f'all:"{query}"',
-        "start": 0,
-        "max_results": k,
-        "sortBy": "relevance"
-    }
-    
+def search_arxiv(query: str, k: int = 5) -> list[dict]:
+    """Searches the arXiv API and returns documents in a standardized format."""
+    params = {"search_query": f'all:"{query}"', "start": 0, "max_results": k, "sortBy": "relevance"}
     try:
         response = requests.get(ARXIV_API_URL, params=params)
         response.raise_for_status()
-        
-        # Parse the XML response
         root = ET.fromstring(response.content)
+        
+        # --- FIX: Standardize the output keys ---
         formatted_docs = []
-        for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
-            summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip()
-            arxiv_id = entry.find('{http://www.w3.org/2005/Atom}id').text
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        for entry in root.findall('atom:entry', ns):
+            title = entry.find('atom:title', ns).text.strip()
+            summary = entry.find('atom:summary', ns).text.strip()
+            # The 'id' tag often contains the URL to the abstract page
+            url = entry.find('atom:id', ns).text
             
             formatted_docs.append({
-                "source": arxiv_id,
+                "title": title,
+                "url": url,
                 "content": f"{title}\n\nAbstract: {summary}",
-                "score": 1.0 # arXiv API does not provide a relevance score
+                "source": "arXiv"
             })
-            
         return formatted_docs
-
     except requests.exceptions.RequestException as e:
         print(f"Error calling arXiv API: {e}")
         return []
