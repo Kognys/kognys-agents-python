@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import uuid
 import os
 from contextlib import asynccontextmanager
+from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -127,10 +128,10 @@ def create_paper(request: CreatePaperRequest):
 def get_paper(paper_id: str):
     print(f"Request to get paper with ID: {paper_id}")
     
-    paper_data = download_paper_from_da(paper_id)
+    paper_data = get_paper_from_kb(paper_id)
     
     if not paper_data:
-        raise HTTPException(status_code=404, detail="Paper not found in Unibase DA.")
+        raise HTTPException(status_code=404, detail="Paper not found in Membase Knowledge Base.")
     
     return PaperResponse(
         paper_id=paper_data.get("id", paper_id),

@@ -1,61 +1,50 @@
 # kognys/services/unibase_da_client.py
 import os
 import requests
-import uuid
+from typing import List, Dict, Any
 
-# The new Base URL for your partner's DA service
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
+# Assuming the DA service uses the same API key, otherwise it needs its own env var
+API_KEY = os.getenv("MEMBASE_API_KEY") 
 
-def upload_paper_to_da(paper_id: str, paper_content: str, original_question: str, transcript: list, source_documents: list) -> dict:
-    owner_address = os.getenv("MEMBASE_ACCOUNT")
-    if not owner_address:
-        print("--- DA CLIENT: ERROR - MEMBASE_ACCOUNT not set. ---")
+def _get_headers() -> dict:
+    if not API_KEY:
+        raise ValueError("API key for DA service not set.")
+    return {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+
+def archive_research_packet(
+    paper_id: str,
+    paper_content: str,
+    original_question: str,
+    transcript: List[Dict[str, Any]],
+    source_documents: List[Dict[str, Any]]
+) -> dict:
+    """Uploads the complete research packet to the Unibase DA layer for archival."""
+    if not DA_SERVICE_URL:
+        print("--- DA CLIENT: ERROR - DA_SERVICE_URL not set. Skipping archival. ---")
         return {}
 
-    upload_url = f"{DA_SERVICE_URL}/api/upload"
-    
-    # Add the new 'source_documents' field to the payload
+    # This assumes a simple upload endpoint. Change if your DA service API is different.
+    upload_url = f"{DA_SERVICE_URL}/api/upload" 
     payload = {
         "id": paper_id,
-        "owner": owner_address,
-        "message": paper_content,
+        "owner": os.getenv("MEMBASE_ACCOUNT"),
+        "final_answer": paper_content,
         "original_question": original_question,
         "debate_transcript": transcript,
         "source_documents": source_documents
     }
-
     try:
-        print(f"--- DA CLIENT: Uploading paper '{paper_id}' with sources to DA service... ---")
-        response = requests.post(upload_url, json=payload)
+        print(f"--- DA CLIENT: Archiving research packet '{paper_id}'... ---")
+        response = requests.post(upload_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         response_data = response.json()
-        print(f"--- DA CLIENT: Successfully uploaded paper. Response: {response_data} ---")
+        print(f"--- DA CLIENT: Successfully archived packet. Response: {response_data} ---")
         return response_data
     except requests.exceptions.RequestException as e:
-        print(f"--- DA CLIENT: Error uploading to DA service: {e} ---")
+        print(f"--- DA CLIENT: Error archiving to DA service: {e}")
         return {}
 
-def download_paper_from_da(paper_id: str) -> dict | None:
-    """
-    Downloads a specific paper by its ID from the Unibase DA service.
-    """
-    owner_address = os.getenv("MEMBASE_ACCOUNT", "anonymous")
-    download_url = f"{DA_SERVICE_URL}/api/download"
-    
-    params = {
-        "name": paper_id,
-        "owner": owner_address
-    }
-
-    try:
-        print(f"--- DA CLIENT: Downloading paper '{paper_id}' from the DA service... ---")
-        response = requests.get(download_url, params=params)
-        response.raise_for_status()
-        
-        response_data = response.json().get("data", {})
-        print(f"--- DA CLIENT: Successfully downloaded paper. ---")
-        return response_data
-        
-    except requests.exceptions.RequestException as e:
-        print(f"--- DA CLIENT: Error downloading from DA service: {e} ---")
-        return None
+def retrieve_archived_packet(paper_id: str) -> dict | None:
+    # Your existing download logic can go here if needed for the API
+    pass
