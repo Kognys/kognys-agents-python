@@ -23,7 +23,18 @@ _PROMPT = ChatPromptTemplate.from_messages(
             "2. **Make a Strategic Decision:** \n"
             "   - If the criticisms point to important information that IS present in the documents but was missed, choose `REVISE`. \n"
             "   - If the criticisms highlight a fundamental lack of information AND the `revision_count` is low (less than 2), choose `RESEARCH_AGAIN` and formulate a new, improved search query. \n"
-            "   - If the `revision_count` is 2 or more, OR if the criticisms are for details not present in the sources, the debate has reached the point of diminishing returns. Choose `FINALIZE`. You must then write the final answer yourself, incorporating the best parts of the last draft and explicitly acknowledging the valid, un-addressable limitations from the criticisms (e.g., 'Based on the available sources, specific case studies were not found...'). \n\n"
+            "   - If the `revision_count` is 2 or more, OR if the criticisms are for details not present in the sources, the debate has reached the point of diminishing returns. Choose `FINALIZE`. \n\n"
+            "3. **CRITICAL FOR FINALIZE:** When you choose FINALIZE, you MUST write a comprehensive final answer that:\n"
+            "   - Synthesizes ALL relevant information from the available documents\n"
+            "   - Incorporates the best parts of the current draft\n" 
+            "   - Addresses the original question as completely as possible using available sources\n"
+            "   - Only mentions limitations for specific details truly absent from sources\n"
+            "   - NEVER gives up or says 'information not available' unless genuinely no relevant content exists\n"
+            "   - Provides substantial value to the user based on what IS available in the documents\n"
+            "   - Should be detailed (at least 2-3 comprehensive paragraphs)\n"
+            "   - Must demonstrate deep synthesis across all available sources\n"
+            "   - Should read like a complete, authoritative research summary\n\n"
+            "Your final_answer should be detailed, informative, and synthesize available information creatively and thoroughly. DO NOT provide short or superficial final answers. \n\n"
             "You must respond using the `OrchestratorResponse` JSON format."
         ),
         (
@@ -85,11 +96,37 @@ async def node(state: KognysState) -> AsyncGenerator[dict, None]:
         yield final_state
         
     elif response.decision == "FINALIZE":
-        # Stream the final answer token by token for UI
+        # When FINALIZE is chosen, we need to create a comprehensive final answer
+        # using ALL available context, not just stream the orchestrator's brief decision
+        
+        # Create a comprehensive synthesis prompt with full context
+        synthesis_prompt = ChatPromptTemplate.from_messages([
+            ("system", 
+             "You are creating the definitive final answer for a research question. "
+             "Synthesize ALL relevant information from the available documents and "
+             "incorporate the best insights from the current draft to create a "
+             "comprehensive, detailed, and authoritative response. Your answer should "
+             "be thorough, well-structured, and provide substantial value to the user."),
+            ("human",
+             "Original Question: {question}\n\n"
+             "Available Source Documents:\n{documents}\n\n"
+             "Current Best Draft:\n{draft}\n\n"
+             "Orchestrator's Final Decision: {orchestrator_reasoning}\n\n"
+             "Create a comprehensive final answer that synthesizes all this information:")
+        ])
+        
+        synthesis_chain = synthesis_prompt | powerful_llm
+        
+        # Stream the comprehensive final answer token by token for UI
         full_final_answer = ""
-        async for token in powerful_llm.astream(response.final_answer):
-             yield {"final_answer_token": token.content}
-             full_final_answer += token.content
+        async for token in synthesis_chain.astream({
+            "question": state.validated_question,
+            "documents": documents_str,
+            "draft": state.draft_answer,
+            "orchestrator_reasoning": response.explanation
+        }):
+            yield {"final_answer_token": token.content}
+            full_final_answer += token.content
         
         # Yield the complete final state
         final_state = {

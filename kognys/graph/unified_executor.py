@@ -56,9 +56,10 @@ class UnifiedExecutor:
             
             # Use a sync bridge to call the async astream_events from our sync method
             final_result = None
+            research_completed = False
             
             async def _stream_and_process():
-                nonlocal final_result
+                nonlocal final_result, research_completed
                 async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
                     kind = event["event"]
                     
@@ -94,13 +95,17 @@ class UnifiedExecutor:
 
             print(f"📝 Graph execution completed")
             
-            # Final check for success
+            # Final check for success - but first check if we already emitted research_completed
+            # If the publisher successfully completed with a final_answer, don't emit research_failed
             if not final_result or not final_result.get("final_answer"):
-                print(f"📝 Emitting research_failed event")
-                self._emit_event("research_failed", {
-                    "error": "No final answer generated",
-                    "status": "Research process failed to generate a final answer"
-                })
+                # Double-check: look for any research_completed events in our event history
+                # If research was actually completed, don't emit failure
+                if not hasattr(self, '_research_completed_emitted') or not self._research_completed_emitted:
+                    print(f"📝 Emitting research_failed event")
+                    self._emit_event("research_failed", {
+                        "error": "No final answer generated",
+                        "status": "Research process failed to generate a final answer"
+                    })
             else:
                  # This case is now handled by the 'publisher' node completion event
                  pass
@@ -162,6 +167,7 @@ class UnifiedExecutor:
                 "status": f"Orchestrator decided: {decision}"
             })
         elif node_name == "publisher" and state.get("final_answer"):
+            self._research_completed_emitted = True
             self._emit_event("research_completed", {
                 "final_answer": state["final_answer"],
                 "status": "Research completed successfully"
