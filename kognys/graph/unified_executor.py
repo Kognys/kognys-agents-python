@@ -282,21 +282,8 @@ class UnifiedExecutor:
         
         print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
         
-        # Emit start event
-        self._emit_event("research_started", {
-            "question": initial_state.question,
-            "task_id": config.get("configurable", {}).get("thread_id"),
-            "status": "Starting research process..."
-        }, agent="system")
-        
-        # Yield the start event
+        # Initialize event tracking (don't emit start event manually - let the graph do it)
         events_yielded = set()
-        with self._events_lock:
-            if self._recent_events:
-                latest = self._recent_events[-1]
-                content_hash = hash(json.dumps(latest, sort_keys=True))
-                events_yielded.add(content_hash)
-                yield latest
         
         try:
             print(f"📝 Executing graph with async streaming...")
