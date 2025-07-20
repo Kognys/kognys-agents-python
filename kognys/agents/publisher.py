@@ -2,6 +2,7 @@
 import hashlib
 import uuid
 import os
+import threading
 from kognys.graph.state import KognysState
 from kognys.services.membase_client import store_final_answer_in_kb, store_transcript_in_memory, finish_task
 from kognys.services.unibase_da_client import archive_research_packet
@@ -17,9 +18,15 @@ def node(state: KognysState) -> dict:
         task_id = state.task_id 
         agent_id = os.getenv("MEMBASE_ID")
 
-        # 1. Store active memory in Membase
+        # 1. Store active memory in Membase (final answer is fast)
         store_final_answer_in_kb(paper_id, final_answer, original_question, state.user_id)
-        store_transcript_in_memory(paper_id, state.transcript)
+        
+        # Store transcript in a background thread to avoid blocking
+        transcript_thread = threading.Thread(
+            target=store_transcript_in_memory,
+            args=(paper_id, state.transcript)
+        )
+        transcript_thread.start()
         
         # 2. Archive the full packet to the DA Layer
         da_response = archive_research_packet(
