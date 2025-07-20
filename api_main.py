@@ -132,7 +132,7 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/papers", response_model=PaperResponse)
-def create_paper(request: CreatePaperRequest):
+async def create_paper(request: CreatePaperRequest):
     """Initiates a new research task."""
     print(f"Received request from user '{request.user_id}' to research: '{request.message}'")
     
@@ -141,7 +141,7 @@ def create_paper(request: CreatePaperRequest):
     
     final_state_result = None
     try:
-        final_state_result = kognys_graph.invoke(initial_state, config=config)
+        final_state_result = await kognys_graph.ainvoke(initial_state, config=config)
     except ValueError as e:
         if "Question rejected by validator" in str(e):
             error_message = generate_error_response(

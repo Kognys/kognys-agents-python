@@ -36,7 +36,8 @@ def test_debate_loop_and_termination(mock_synthesizer_chain, mock_challenger_cha
     }
 
     # Act: Invoke the full graph
-    final_state = kognys_graph.invoke(initial_state)
+    import asyncio
+    final_state = asyncio.run(kognys_graph.ainvoke(initial_state))
 
     # Assert
     # Check that the synthesizer was called twice

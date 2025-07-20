@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 import uuid
 
 # Import the FastAPI app instance from your api_main.py file
@@ -25,7 +25,7 @@ def test_health_check_endpoint():
     print("\n✅ API test for GET / (health check) passed successfully.")
 
 
-@patch('api_main.kognys_graph.invoke')
+@patch('api_main.kognys_graph.ainvoke', new_callable=AsyncMock)
 def test_create_paper_endpoint(mock_graph_invoke):
     """
     Tests the POST /papers endpoint.
@@ -33,6 +33,7 @@ def test_create_paper_endpoint(mock_graph_invoke):
     """
     # 1. ARRANGE: Set up the mock return value for the Kognys agent
     mock_final_answer = "This is a detailed research paper about decentralized AI."
+    # Since we're now using ainvoke (async), use AsyncMock
     mock_graph_invoke.return_value = {
         "final_answer": mock_final_answer,
         "retrieval_status": "Documents found"
