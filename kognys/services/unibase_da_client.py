@@ -1,10 +1,11 @@
 # kognys/services/unibase_da_client.py
 import os
 import requests
+import json
+import time
 from typing import List, Dict, Any
 
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
-# Assuming the DA service uses the same API key, otherwise it needs its own env var
 API_KEY = os.getenv("MEMBASE_API_KEY") 
 
 def _get_headers() -> dict:
@@ -24,7 +25,6 @@ def archive_research_packet(
         print("--- DA CLIENT: ERROR - DA_SERVICE_URL not set. Skipping archival. ---")
         return {}
 
-    # This assumes a simple upload endpoint. Change if your DA service API is different.
     upload_url = f"{DA_SERVICE_URL}/api/upload" 
     payload = {
         "id": paper_id,
@@ -34,15 +34,24 @@ def archive_research_packet(
         "debate_transcript": transcript,
         "source_documents": source_documents
     }
+
+    start_time = time.time()
+    payload_size = len(json.dumps(payload).encode('utf-8'))
+
+    print(f"\n--- 🗄️ Archiving Research Packet to Unibase DA ---")
+    print(f"  - Endpoint: POST {upload_url}")
+    print(f"  - Data Size: {payload_size / 1024:.2f} KB")
+
     try:
-        print(f"--- DA CLIENT: Archiving research packet '{paper_id}'... ---")
         response = requests.post(upload_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         response_data = response.json()
-        print(f"--- DA CLIENT: Successfully archived packet. Response: {response_data} ---")
+        duration = time.time() - start_time
+        print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
         return response_data
     except requests.exceptions.RequestException as e:
-        print(f"--- DA CLIENT: Error archiving to DA service: {e}")
+        duration = time.time() - start_time
+        print(f"  - ❌ FAILED | Took {duration:.2f} seconds | Error: {e}")
         return {}
 
 def retrieve_archived_packet(paper_id: str) -> dict | None:

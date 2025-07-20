@@ -2,6 +2,7 @@
 import os
 import requests
 import json
+import time
 from typing import List, Dict, Any
 
 API_BASE_URL = os.getenv("MEMBASE_API_URL")
@@ -37,55 +38,56 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str) -> bool:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""
     kb_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
+    document = {"content": paper_content, "metadata": {"paper_id": paper_id, "original_question": original_question}}
+    payload = {"documents": [document]}
     
-    document = {
-        "content": paper_content, 
-        "metadata": {"paper_id": paper_id, "original_question": original_question}
-    }
+    start_time = time.time()
+    payload_size = len(json.dumps(payload).encode('utf-8'))
     
-    # --- THIS IS THE FIX ---
-    # Reverting to the list-based payload. The server error "'NoneType' is not iterable"
-    # strongly implies it is designed to loop through a list of documents.
-    payload = {"documents": [document]} 
-    
+    print(f"\n--- 📤 Storing Final Answer in Membase KB ---")
+    print(f"  - Endpoint: POST {kb_url}")
+    print(f"  - Data Size: {payload_size / 1024:.2f} KB")
+
     try:
-        print(f"--- MEMBASE CLIENT: Storing final answer for paper '{paper_id}' in KB... ---")
         response = requests.post(kb_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
-        print("--- MEMBASE CLIENT: Successfully stored in KB. ---")
+        duration = time.time() - start_time
+        print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"--- MEMBASE CLIENT: ERROR storing in KB: {e} ---")
-        # Added more detailed error logging to help debug if it fails again
+        duration = time.time() - start_time
+        print(f"  - ❌ FAILED | Took {duration:.2f} seconds | Error: {e}")
         if 'response' in locals() and hasattr(response, 'text'):
-            print(f"   Response Body: {response.text}")
+            print(f"     Response Body: {response.text}")
         return False
-    
+
 def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) -> bool:
     """Stores the debate transcript as a conversation in Membase."""
     convo_url = f"{API_BASE_URL}/api/v1/memory/conversations/{paper_id}/messages"
-    
-    # --- FIX: Transform our internal transcript to the Membase message format ---
-    membase_messages = []
-    for entry in transcript:
-        membase_messages.append({
-            "name": entry.get("agent", "system"),
-            "content": f"{entry.get('action', '')}: {entry.get('details', '') or entry.get('output', '')}",
-            "role": "assistant" # Use a consistent role for agent actions
-        })
-        
+    membase_messages = [{"name": e.get("agent", "system"), "content": f"{e.get('action', '')}: {e.get('details', '') or e.get('output', '')}", "role": "assistant"} for e in transcript]
     payload = {"messages": membase_messages}
     
+    start_time = time.time()
+    payload_size = len(json.dumps(payload).encode('utf-8'))
+
+    print(f"\n--- 📤 Storing Transcript in Membase Conversations ---")
+    print(f"  - Endpoint: POST {convo_url}")
+    print(f"  - Data Size: {payload_size / 1024:.2f} KB")
+
     try:
-        print(f"--- MEMBASE CLIENT: Storing transcript for paper '{paper_id}'... ---")
+        # First, ensure the conversation exists
         requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id}, headers=_get_headers())
+        # Then, add the messages
         response = requests.post(convo_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
-        print("--- MEMBASE CLIENT: Successfully stored transcript. ---")
+        duration = time.time() - start_time
+        print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"--- MEMBASE CLIENT: ERROR storing transcript: {e} ---")
-        print(f"   Response Body: {response.text if 'response' in locals() else 'No Response'}")
+        duration = time.time() - start_time
+        print(f"  - ❌ FAILED | Took {duration:.2f} seconds | Error: {e}")
+        if 'response' in locals() and hasattr(response, 'text'):
+            print(f"     Response Body: {response.text}")
         return False
 
 def get_paper_from_kb(paper_id: str) -> dict | None:
