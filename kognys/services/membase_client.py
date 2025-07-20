@@ -265,7 +265,7 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     print(f"  - Endpoint: POST {kb_url}")
     print(f"  - Data Size: {payload_size / 1024:.2f} KB")
     print(f"  - User ID in metadata: {metadata.get('user_id', 'None')}")
-    print(f"  - Payload structure: documents={'content': '...', 'metadata': {metadata}}")
+    print(f"  - Payload structure: documents={{'content': '...', 'metadata': {metadata!r}}}")
 
     try:
         response = requests.post(kb_url, json=payload)
