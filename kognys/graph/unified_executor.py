@@ -221,9 +221,7 @@ class UnifiedExecutor:
         if not state:
             return
 
-        # Skip LangGraph wrapper nodes but allow actual agent nodes
-        if node_name == "LangGraph":
-            return
+        # Allow all events through for presentation
 
         # Map node names to agent names for better frontend display
         agent_name = node_name.replace("_", " ").title()
@@ -293,21 +291,16 @@ class UnifiedExecutor:
             "status": "Starting research process..."
         }, agent="system")
         
-        # Yield the start event and initialize tracking
-        events_yielded = set()
+        # Yield the start event  
         with self._events_lock:
             if self._recent_events:
-                latest = self._recent_events[-1]
-                content_hash = hash(json.dumps(latest, sort_keys=True))
-                events_yielded.add(content_hash)
-                yield latest
+                yield self._recent_events[-1]
         
         try:
             print(f"📝 Executing graph with async streaming...")
             
-            # Track completion state and yielded events
+            # Track completion state  
             final_result = None
-            node_completions_seen = set()  # Track which nodes we've already processed
             
             # Use async graph streaming directly (no thread conflicts)
             async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
@@ -363,34 +356,14 @@ class UnifiedExecutor:
                     # A node has finished executing
                     node_name = event["name"]
                     state_update = event["data"]["output"]
+                    print(f"🔄 Processing node completion: {node_name}")
+                    self._emit_node_completion_event(node_name, state_update)
+                    final_result = state_update # Store the last complete state
                     
-                    # Create unique identifier for this node completion
-                    node_completion_id = f"{node_name}_{hash(json.dumps(state_update, sort_keys=True)) if state_update else 'empty'}"
-                    
-                    # Only process if we haven't seen this exact completion before
-                    if node_completion_id not in node_completions_seen:
-                        node_completions_seen.add(node_completion_id)
-                        print(f"🔄 Processing node completion: {node_name}")
-                        
-                        # Store the count of events before emitting
-                        events_before = len(self._recent_events) if self._recent_events else 0
-                        
-                        self._emit_node_completion_event(node_name, state_update)
-                        final_result = state_update # Store the last complete state
-                        
-                        # Only yield if new events were actually emitted
-                        with self._events_lock:
-                            if self._recent_events and len(self._recent_events) > events_before:
-                                # Check all new events since the emit
-                                for i in range(events_before, len(self._recent_events)):
-                                    latest = self._recent_events[i]
-                                    content_hash = hash(json.dumps(latest, sort_keys=True))
-                                    if content_hash not in events_yielded:
-                                        events_yielded.add(content_hash)
-                                        yield latest
-                    else:
-                        print(f"🔄 Skipping duplicate node completion: {node_name}")
-                        final_result = state_update  # Still store the result
+                    # Yield events as they are stored
+                    with self._events_lock:
+                        if self._recent_events:
+                            yield self._recent_events[-1]
 
             print(f"📝 Graph execution completed")
             
@@ -406,11 +379,7 @@ class UnifiedExecutor:
                     # Yield the failure event
                     with self._events_lock:
                         if self._recent_events:
-                            latest = self._recent_events[-1]
-                            content_hash = hash(json.dumps(latest, sort_keys=True))
-                            if content_hash not in events_yielded:
-                                events_yielded.add(content_hash)
-                                yield latest
+                            yield self._recent_events[-1]
             
         except Exception as e:
             print(f"❌ Error in execute_streaming: {e}")
@@ -430,11 +399,7 @@ class UnifiedExecutor:
             # Yield the error event  
             with self._events_lock:
                 if self._recent_events:
-                    latest = self._recent_events[-1]
-                    content_hash = hash(json.dumps(latest, sort_keys=True))
-                    if content_hash not in events_yielded:
-                        events_yielded.add(content_hash)
-                        yield latest
+                    yield self._recent_events[-1]
             raise
         finally:
             self._stop_event.set()
