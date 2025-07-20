@@ -23,7 +23,7 @@ def generate_paper_id(question: str, content: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("--- API STARTUP: REGISTERING AGENT ---")
-    agent_id = os.getenv("MEMBASE_ID", "kognys")
+    agent_id = os.getenv("MEMBASE_ID", "kognys_starter")
     is_registered = register_agent_if_not_exists(agent_id=agent_id)
     
     if not is_registered:
