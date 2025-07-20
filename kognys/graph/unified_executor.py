@@ -289,6 +289,13 @@ class UnifiedExecutor:
             "status": "Starting research process..."
         }, agent="system")
         
+        # Yield the start event
+        last_yielded_timestamp = None
+        with self._events_lock:
+            if self._recent_events:
+                last_yielded_timestamp = self._recent_events[-1]["timestamp"]
+                yield self._recent_events[-1]
+        
         try:
             print(f"📝 Executing graph with async streaming...")
             
@@ -315,10 +322,25 @@ class UnifiedExecutor:
                     # Check for our custom token keys and include agent name
                     if "draft_answer_token" in chunk:
                         self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]}, agent="synthesizer")
+                        # Yield only this new token event
+                        with self._events_lock:
+                            if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
+                                last_yielded_timestamp = self._recent_events[-1]["timestamp"]
+                                yield self._recent_events[-1]
                     elif "criticism_token" in chunk:
                         self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
+                        # Yield only this new token event
+                        with self._events_lock:
+                            if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
+                                last_yielded_timestamp = self._recent_events[-1]["timestamp"]
+                                yield self._recent_events[-1]
                     elif "final_answer_token" in chunk:
                         self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
+                        # Yield only this new token event
+                        with self._events_lock:
+                            if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
+                                last_yielded_timestamp = self._recent_events[-1]["timestamp"]
+                                yield self._recent_events[-1]
 
                 elif kind == "on_chain_end":
                     # A node has finished executing
@@ -327,11 +349,12 @@ class UnifiedExecutor:
                     print(f"🔄 Processing node completion: {node_name}")
                     self._emit_node_completion_event(node_name, state_update)
                     final_result = state_update # Store the last complete state
-                
-                # Yield events as they are stored
-                with self._events_lock:
-                    if self._recent_events:
-                        yield self._recent_events[-1]
+                    
+                    # Yield only if a new event was actually emitted
+                    with self._events_lock:
+                        if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
+                            last_yielded_timestamp = self._recent_events[-1]["timestamp"]
+                            yield self._recent_events[-1]
 
             print(f"📝 Graph execution completed")
             
@@ -346,7 +369,8 @@ class UnifiedExecutor:
                     
                     # Yield the failure event
                     with self._events_lock:
-                        if self._recent_events:
+                        if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
+                            last_yielded_timestamp = self._recent_events[-1]["timestamp"]
                             yield self._recent_events[-1]
             
         except Exception as e:
@@ -364,9 +388,9 @@ class UnifiedExecutor:
                     "status": "An error occurred during research"
                 }, agent="system")
             
-            # Yield the error event
+            # Yield the error event  
             with self._events_lock:
-                if self._recent_events:
+                if self._recent_events and self._recent_events[-1]["timestamp"] != last_yielded_timestamp:
                     yield self._recent_events[-1]
             raise
         finally:
