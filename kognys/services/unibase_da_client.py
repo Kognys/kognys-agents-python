@@ -18,7 +18,8 @@ def archive_research_packet(
     paper_content: str,
     original_question: str,
     transcript: List[Dict[str, Any]],
-    source_documents: List[Dict[str, Any]]
+    source_documents: List[Dict[str, Any]],
+    user_id: str = None
 ) -> dict:
     """Uploads the complete research packet to the Unibase DA layer for archival."""
     if not DA_SERVICE_URL:
@@ -34,6 +35,10 @@ def archive_research_packet(
         "debate_transcript": transcript,
         "source_documents": source_documents
     }
+    
+    # Add user_id to payload if provided
+    if user_id:
+        payload["user_id"] = user_id
 
     start_time = time.time()
     payload_size = len(json.dumps(payload).encode('utf-8'))

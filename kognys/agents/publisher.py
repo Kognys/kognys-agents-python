@@ -27,7 +27,8 @@ def node(state: KognysState) -> dict:
             paper_content=final_answer,
             original_question=original_question,
             transcript=state.transcript,
-            source_documents=state.documents
+            source_documents=state.documents,
+            user_id=state.user_id
         )
         storage_receipt_id = da_response.get("id")
 
