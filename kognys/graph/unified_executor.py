@@ -325,32 +325,19 @@ class UnifiedExecutor:
                         # Yield immediately for real-time streaming
                         with self._events_lock:
                             if self._recent_events:
-                                latest = self._recent_events[-1]
-                                # Use content hash for better deduplication
-                                content_hash = hash(json.dumps(latest, sort_keys=True))
-                                if content_hash not in events_yielded:
-                                    events_yielded.add(content_hash)
-                                    yield latest
+                                yield self._recent_events[-1]
                     elif "criticism_token" in chunk:
                         self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
                         # Yield immediately for real-time streaming
                         with self._events_lock:
                             if self._recent_events:
-                                latest = self._recent_events[-1]
-                                content_hash = hash(json.dumps(latest, sort_keys=True))
-                                if content_hash not in events_yielded:
-                                    events_yielded.add(content_hash)
-                                    yield latest
+                                yield self._recent_events[-1]
                     elif "final_answer_token" in chunk:
                         self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
                         # Yield immediately for real-time streaming
                         with self._events_lock:
                             if self._recent_events:
-                                latest = self._recent_events[-1]
-                                content_hash = hash(json.dumps(latest, sort_keys=True))
-                                if content_hash not in events_yielded:
-                                    events_yielded.add(content_hash)
-                                    yield latest
+                                yield self._recent_events[-1]
 
                 elif kind == "on_chain_end":
                     # A node has finished executing
