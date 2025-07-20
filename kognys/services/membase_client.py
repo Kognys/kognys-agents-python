@@ -37,53 +37,95 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
 
 def create_task(task_id: str, price: int = 1000) -> bool:
     """Creates a new task on the blockchain via the Membase API."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+        
     task_url = f"{API_BASE_URL}/api/v1/tasks/create"
     payload = {"task_id": task_id, "price": price}
     
     print(f"\n--- ⛓️ Creating On-Chain Task ---")
     print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Task ID: {task_id}")
+    print(f"  - Price: {price}")
 
     try:
         response = requests.post(task_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
+        response_data = response.json()
+        tx_hash = response_data.get('transaction_hash', 'N/A')
         print(f"  - ✅ Success: Task '{task_id}' created.")
+        print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
         print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  - Response Status: {e.response.status_code}")
+            print(f"  - Response Body: {e.response.text}")
         return False
 
 def join_task(task_id: str, agent_id: str) -> bool:
     """Joins an existing task on the blockchain."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
+        return False
+        
     task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/join"
     payload = {"agent_id": agent_id}
     
     print(f"\n--- 🙋 Joining On-Chain Task ---")
     print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Agent ID: {agent_id}")
+    print(f"  - Task ID: {task_id}")
     
     try:
         response = requests.post(task_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
+        response_data = response.json()
+        tx_hash = response_data.get('transaction_hash', 'N/A')
         print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
+        print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
         print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  - Response Status: {e.response.status_code}")
+            print(f"  - Response Body: {e.response.text}")
         return False
 
 def finish_task(task_id: str, agent_id: str) -> bool:
     """Marks a task as finished on the blockchain."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
+        return False
+        
     task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/finish"
     payload = {"agent_id": agent_id}
     
     print(f"\n--- ✅ Finishing On-Chain Task ---")
     print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Agent ID: {agent_id}")
+    print(f"  - Task ID: {task_id}")
 
     try:
         response = requests.post(task_url, headers=_get_headers(), json=payload)
         response.raise_for_status()
+        response_data = response.json()
+        tx_hash = response_data.get('transaction_hash', 'N/A')
         print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
+        print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
         print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  - Response Status: {e.response.status_code}")
+            print(f"  - Response Body: {e.response.text}")
         return False
 
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> bool:
