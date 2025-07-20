@@ -15,24 +15,44 @@ def _get_headers() -> dict:
 
 def register_agent_if_not_exists(agent_id: str) -> bool:
     """Registers an agent on the blockchain via the Membase API."""
+    if not API_BASE_URL:
+        print(f"❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"❌ FAILED: Agent ID is not provided")
+        return False
+        
+    print(f"\n--- 🤖 Registering Agent on Blockchain ---")
+    print(f"  - Agent ID: {agent_id}")
+    
     try:
         check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}"
-        response = requests.get(check_url, headers=_get_headers())
+        response = requests.get(check_url)
         if response.status_code == 200:
-            print(f"✅ Agent '{agent_id}' is already registered.")
+            print(f"  - ✅ Agent '{agent_id}' is already registered.")
             return True
     except requests.exceptions.RequestException:
         pass
 
     register_url = f"{API_BASE_URL}/api/v1/agents/register"
     payload = {"agent_id": agent_id}
+    
+    print(f"  - Endpoint: POST {register_url}")
+    print(f"  - Payload: {payload}")
+    
     try:
-        response = requests.post(register_url, headers=_get_headers(), json=payload)
+        response = requests.post(register_url, json=payload)
         response.raise_for_status()
-        print(f"✅ Successfully registered agent '{agent_id}' on-chain.")
+        response_data = response.json()
+        tx_hash = response_data.get('transaction_hash', 'N/A')
+        print(f"  - ✅ Successfully registered agent '{agent_id}' on-chain.")
+        print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to register agent '{agent_id}'. Error: {e}")
+        print(f"  - ❌ Failed to register agent '{agent_id}'. Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  - Response Status: {e.response.status_code}")
+            print(f"  - Response Body: {e.response.text}")
         return False
 
 def create_task(task_id: str, price: int = 1000) -> bool:
@@ -50,7 +70,7 @@ def create_task(task_id: str, price: int = 1000) -> bool:
     print(f"  - Price: {price}")
 
     try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response = requests.post(task_url, json=payload)
         response.raise_for_status()
         response_data = response.json()
         tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -82,7 +102,7 @@ def join_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Task ID: {task_id}")
     
     try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response = requests.post(task_url, json=payload)
         response.raise_for_status()
         response_data = response.json()
         tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -114,7 +134,7 @@ def finish_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Task ID: {task_id}")
 
     try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response = requests.post(task_url, json=payload)
         response.raise_for_status()
         response_data = response.json()
         tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -145,7 +165,7 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     print(f"  - Data Size: {payload_size / 1024:.2f} KB")
 
     try:
-        response = requests.post(kb_url, headers=_get_headers(), json=payload)
+        response = requests.post(kb_url, json=payload)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -172,9 +192,9 @@ def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) 
 
     try:
         # First, ensure the conversation exists
-        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id}, headers=_get_headers())
+        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id})
         # Then, add the messages
-        response = requests.post(convo_url, headers=_get_headers(), json=payload)
+        response = requests.post(convo_url, json=payload)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -193,7 +213,7 @@ def get_paper_from_kb(paper_id: str) -> dict | None:
     params = {"query": paper_id, "metadata_filter": metadata_filter, "top_k": 1}
     try:
         print(f"--- MEMBASE CLIENT: Searching for paper '{paper_id}' in KB... ---")
-        response = requests.get(search_url, headers=_get_headers(), params=params)
+        response = requests.get(search_url, params=params)
         response.raise_for_status()
         results = response.json().get("results", [])
         if not results:
@@ -215,7 +235,7 @@ def get_papers_by_user_id(user_id: str, top_k: int = 10) -> list:
     params = {"query": "", "metadata_filter": metadata_filter, "top_k": top_k}
     try:
         print(f"--- MEMBASE CLIENT: Searching for papers by user '{user_id}' in KB... ---")
-        response = requests.get(search_url, headers=_get_headers(), params=params)
+        response = requests.get(search_url, params=params)
         response.raise_for_status()
         results = response.json().get("results", [])
         papers = []
@@ -247,7 +267,7 @@ def create_aip_agent(agent_id: str, description: str = "", conversation_id: str 
     print(f"  - Agent ID: {agent_id}")
     
     try:
-        response = requests.post(create_url, headers=_get_headers(), json=payload)
+        response = requests.post(create_url, json=payload)
         response.raise_for_status()
         print(f"  - ✅ Success: AIP Agent '{agent_id}' created.")
         return response.json()
@@ -274,7 +294,7 @@ def query_aip_agent(agent_id: str, query: str, conversation_id: str = None,
     print(f"  - Query: {query[:100]}...")
     
     try:
-        response = requests.post(query_url, headers=_get_headers(), json=payload)
+        response = requests.post(query_url, json=payload)
         response.raise_for_status()
         result = response.json()
         print(f"  - ✅ Success: Received response from agent.")
@@ -297,7 +317,7 @@ def send_agent_message(from_agent_id: str, to_agent_id: str, action: str, messag
     print(f"  - Action: {action}")
     
     try:
-        response = requests.post(message_url, headers=_get_headers(), json=payload)
+        response = requests.post(message_url, json=payload)
         response.raise_for_status()
         print(f"  - ✅ Success: Message sent.")
         return response.json()
@@ -317,7 +337,7 @@ def buy_agent_auth(buyer_id: str, seller_id: str) -> bool:
     print(f"  - Buyer: {buyer_id} → Seller: {seller_id}")
     
     try:
-        response = requests.post(auth_url, headers=_get_headers(), json=payload)
+        response = requests.post(auth_url, json=payload)
         response.raise_for_status()
         print(f"  - ✅ Success: Authorization granted.")
         return True
@@ -330,7 +350,7 @@ def check_agent_auth(agent_id: str, target_id: str) -> bool:
     check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}/has-auth/{target_id}"
     
     try:
-        response = requests.get(check_url, headers=_get_headers())
+        response = requests.get(check_url)
         response.raise_for_status()
         result = response.json()
         return result.get("has_auth", False)
@@ -349,7 +369,7 @@ def route_request(request_text: str, top_k: int = 3) -> list:
     print(f"  - Request: {request_text[:100]}...")
     
     try:
-        response = requests.post(route_url, headers=_get_headers(), json=payload)
+        response = requests.post(route_url, json=payload)
         response.raise_for_status()
         result = response.json()
         routes = result.get("routes", [])
