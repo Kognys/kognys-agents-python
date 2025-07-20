@@ -6,7 +6,7 @@ from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
 import os
-from kognys.services.membase_client import create_task, join_task
+from kognys.services.membase_client import create_task, join_task, register_agent_if_not_exists
 
 # 1. Define the desired JSON output structure using Pydantic
 class ValidatorResponse(BaseModel):
@@ -54,10 +54,16 @@ def node(state: KognysState) -> dict:
 
     # Use uuid.uuid4() to generate a truly random and unique ID for every run.
     unique_id_for_run = str(uuid.uuid4())
-    agent_id = os.getenv("MEMBASE_ID")
+    agent_id = os.getenv("MEMBASE_ID", "kognys_starter")  # Hardcoded fallback
+
+    # Ensure agent is registered before creating/joining tasks
+    register_agent_if_not_exists(agent_id)
 
     # Create and join the on-chain task
     if create_task(task_id=unique_id_for_run):
+        # Add small delay to ensure task is created on blockchain
+        import time
+        time.sleep(1)
         join_task(task_id=unique_id_for_run, agent_id=agent_id)
 
     update_dict = {

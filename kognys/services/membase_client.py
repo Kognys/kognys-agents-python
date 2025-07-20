@@ -14,6 +14,26 @@ def _get_headers() -> dict:
         raise ValueError("MEMBASE_API_KEY is not set in the environment.")
     return {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
+def _parse_error_response(e: requests.exceptions.RequestException) -> tuple[str, str]:
+    """Parse error response to extract actual error code and message."""
+    if hasattr(e, 'response') and e.response is not None:
+        try:
+            error_data = json.loads(e.response.text)
+            detail = error_data.get('detail', '')
+            
+            # Extract actual error code from detail if in format "CODE: message"
+            if ': ' in detail and detail.split(': ')[0].isdigit():
+                actual_code = detail.split(': ')[0]
+                error_msg = detail.split(': ', 1)[1] if len(detail.split(': ', 1)) > 1 else detail
+                return actual_code, error_msg
+            else:
+                return str(e.response.status_code), detail
+                
+        except (json.JSONDecodeError, KeyError):
+            return str(e.response.status_code), e.response.text
+    
+    return "Unknown", str(e)
+
 def register_agent_if_not_exists(agent_id: str) -> bool:
     """Registers an agent on the blockchain via the Membase API."""
     if not API_BASE_URL:
@@ -50,10 +70,9 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
         print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"  - ❌ Failed to register agent '{agent_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
+        error_code, error_msg = _parse_error_response(e)
+        print(f"  - ❌ FAILED ({error_code}): Failed to register agent '{agent_id}'")
+        print(f"     Error: {error_msg}")
         return False
 
 def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
@@ -92,10 +111,9 @@ def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
                 sleep(wait_time)
                 continue
             
-            print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"  - Response Status: {e.response.status_code}")
-                print(f"  - Response Body: {e.response.text}")
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Could not create task '{task_id}'")
+            print(f"     Error: {error_msg}")
             return False
     
     return False
@@ -139,10 +157,9 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
                 sleep(wait_time)
                 continue
             
-            print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"  - Response Status: {e.response.status_code}")
-                print(f"  - Response Body: {e.response.text}")
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Agent '{agent_id}' could not join task '{task_id}'")
+            print(f"     Error: {error_msg}")
             return False
     
     return False
@@ -186,10 +203,9 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
                 sleep(wait_time)
                 continue
             
-            print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"  - Response Status: {e.response.status_code}")
-                print(f"  - Response Body: {e.response.text}")
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Could not finish task '{task_id}'")
+            print(f"     Error: {error_msg}")
             return False
     
     return False
@@ -403,22 +419,41 @@ def buy_agent_auth(buyer_id: str, seller_id: str, max_retries: int = 3) -> bool:
             print(f"  - 🔗 Transaction Hash: {tx_hash}")
             return True
         except requests.exceptions.RequestException as e:
-            is_nonce_error = (
-                hasattr(e, 'response') and e.response is not None and 
-                e.response.status_code == 500 and 
-                ('nonce too low' in str(e.response.text) or 'nonce' in str(e.response.text).lower())
-            )
-            
-            if is_nonce_error and attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 3  # Longer wait for auth: 3s, 6s, 9s
-                print(f"  - ⚠️ Nonce/blockchain error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
-                sleep(wait_time)
-                continue
-            
-            print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
             if hasattr(e, 'response') and e.response is not None:
-                print(f"  - Response Status: {e.response.status_code}")
-                print(f"  - Response Body: {e.response.text}")
+                response_text = e.response.text
+                
+                # Parse the actual error from response body
+                try:
+                    error_data = json.loads(response_text)
+                    detail = error_data.get('detail', '')
+                    
+                    # Check if it's an "already authorized" error
+                    if '409' in detail and 'already has authorization' in detail:
+                        print(f"  - ✅ Already authorized: {buyer_id} → {seller_id}")
+                        return True
+                    
+                    # Check for nonce errors
+                    is_nonce_error = (
+                        e.response.status_code == 500 and 
+                        ('nonce too low' in detail.lower() or 'nonce' in detail.lower())
+                    )
+                    
+                    if is_nonce_error and attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 3  # Longer wait for auth: 3s, 6s, 9s
+                        print(f"  - ⚠️ Nonce/blockchain error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        sleep(wait_time)
+                        continue
+                    
+                    # Use the helper to parse error
+                    error_code, error_msg = _parse_error_response(e)
+                    print(f"  - ❌ FAILED ({error_code}): {error_msg}")
+                        
+                except (json.JSONDecodeError, KeyError):
+                    # Fallback to original error display
+                    print(f"  - ❌ FAILED ({e.response.status_code}): {response_text}")
+            else:
+                print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
+            
             return False
     
     return False
