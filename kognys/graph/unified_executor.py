@@ -280,62 +280,97 @@ class UnifiedExecutor:
     async def execute_streaming(self, initial_state: KognysState, config: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute the graph with streaming events (for SSE)."""
         
-        # Create a queue for events
-        event_queue = queue.Queue()
+        print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
         
-        def event_callback(event_type: str, data: Dict[str, Any]):
-            # Get the most recent stored event which includes agent info
+        # Emit start event
+        self._emit_event("research_started", {
+            "question": initial_state.question,
+            "task_id": config.get("configurable", {}).get("thread_id"),
+            "status": "Starting research process..."
+        }, agent="system")
+        
+        try:
+            print(f"📝 Executing graph with async streaming...")
+            
+            # Track completion state
+            final_result = None
+            
+            # Use async graph streaming directly (no thread conflicts)
+            async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
+                kind = event["event"]
+                
+                if kind == "on_chain_start":
+                    # A new node is starting to execute
+                    node_name = event["name"]
+                    print(f"🚀 Starting node: {node_name}")
+                
+                elif kind == "on_chain_stream":
+                    # A streaming node is yielding a chunk
+                    chunk = event["data"]["chunk"]
+                    node_name = event.get("name", "unknown")
+                    
+                    if not chunk:
+                        continue
+                        
+                    # Check for our custom token keys and include agent name
+                    if "draft_answer_token" in chunk:
+                        self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]}, agent="synthesizer")
+                    elif "criticism_token" in chunk:
+                        self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
+                    elif "final_answer_token" in chunk:
+                        self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
+
+                elif kind == "on_chain_end":
+                    # A node has finished executing
+                    node_name = event["name"]
+                    state_update = event["data"]["output"]
+                    print(f"🔄 Processing node completion: {node_name}")
+                    self._emit_node_completion_event(node_name, state_update)
+                    final_result = state_update # Store the last complete state
+                
+                # Yield events as they are stored
+                with self._events_lock:
+                    if self._recent_events:
+                        yield self._recent_events[-1]
+
+            print(f"📝 Graph execution completed")
+            
+            # Final check for success
+            if not final_result or not final_result.get("final_answer"):
+                if not hasattr(self, '_research_completed_emitted') or not self._research_completed_emitted:
+                    print(f"📝 Emitting research_failed event")
+                    self._emit_event("research_failed", {
+                        "error": "No final answer generated",
+                        "status": "Research process failed to generate a final answer"
+                    }, agent="system")
+                    
+                    # Yield the failure event
+                    with self._events_lock:
+                        if self._recent_events:
+                            yield self._recent_events[-1]
+            
+        except Exception as e:
+            print(f"❌ Error in execute_streaming: {e}")
+            # Handle validation errors specifically
+            if isinstance(e, ValueError):
+                self._emit_event("validation_error", {
+                    "error": str(e),
+                    "status": "Question validation failed",
+                    "suggestion": "Please rephrase your question to be more specific and research-worthy."
+                }, agent="input_validator")
+            else:
+                self._emit_event("error", {
+                    "error": str(e),
+                    "status": "An error occurred during research"
+                }, agent="system")
+            
+            # Yield the error event
             with self._events_lock:
                 if self._recent_events:
-                    event_queue.put(self._recent_events[-1])
-                else:
-                    # Fallback if no stored event
-                    event_queue.put({
-                        "event_type": event_type,
-                        "data": data,
-                        "timestamp": time.time(),
-                        "agent": "unknown"
-                    })
-        
-        # Add our callback
-        self.add_event_callback(event_callback)
-        
-        # Start execution in background
-        def run_execution():
-            try:
-                return self.execute_sync(initial_state, config)
-            except Exception as e:
-                event_queue.put({
-                    "event_type": "error",
-                    "data": {"error": str(e)},
-                    "timestamp": time.time(),
-                    "agent": "system"
-                })
-                raise
-        
-        # Start execution thread
-        execution_thread = threading.Thread(target=run_execution)
-        execution_thread.start()
-        
-        # Stream events as they arrive
-        while True:
-            try:
-                # Wait for events with timeout
-                event = event_queue.get(timeout=1.0)
-                yield event
-                
-                # If this is a final event, break
-                if event["event_type"] in ["research_completed", "research_failed", "error", "validation_error"]:
-                    break
-                    
-            except queue.Empty:
-                # Check if execution thread is still running
-                if not execution_thread.is_alive():
-                    break
-                continue
-        
-        # Wait for execution thread to finish
-        execution_thread.join(timeout=5.0)
+                    yield self._recent_events[-1]
+            raise
+        finally:
+            self._stop_event.set()
 
 # Create unified executor instance
 unified_executor = UnifiedExecutor(kognys_graph) 
