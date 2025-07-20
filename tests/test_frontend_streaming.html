@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Streaming Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+      .status.connected {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .status.disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .status.connecting {
+        background-color: #fff3cd;
+        color: #856404;
+      }
+
+      .events {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+      }
+      .event {
+        margin: 5px 0;
+        padding: 8px;
+        background: white;
+        border-left: 4px solid #007bff;
+        border-radius: 2px;
+      }
+      .event.error {
+        border-left-color: #dc3545;
+      }
+      .event.success {
+        border-left-color: #28a745;
+      }
+      .event.info {
+        border-left-color: #17a2b8;
+      }
+
+      .input-group {
+        margin: 20px 0;
+      }
+      input[type="text"] {
+        width: 70%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+      button {
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+
+      .final-answer {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #e7f3ff;
+        border: 1px solid #b3d9ff;
+        border-radius: 4px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🧪 WebSocket Streaming Test</h1>
+      <p>
+        Test the real-time streaming functionality of the Kognys research API.
+      </p>
+
+      <div id="status" class="status disconnected">Disconnected</div>
+
+      <div class="input-group">
+        <input
+          type="text"
+          id="question"
+          placeholder="Enter your research question..."
+          value="What are the latest developments in artificial intelligence?"
+        />
+        <button id="startBtn" onclick="startResearch()">Start Research</button>
+        <button id="stopBtn" onclick="stopResearch()" disabled>Stop</button>
+      </div>
+
+      <h3>📊 Real-time Events:</h3>
+      <div id="events" class="events"></div>
+
+      <div id="finalAnswer" class="final-answer" style="display: none"></div>
+    </div>
+
+    <script>
+      let ws = null;
+      let isConnected = false;
+
+      function updateStatus(message, className) {
+        const status = document.getElementById("status");
+        status.textContent = message;
+        status.className = `status ${className}`;
+      }
+
+      function addEvent(eventType, data, timestamp) {
+        const eventsDiv = document.getElementById("events");
+        const eventDiv = document.createElement("div");
+        eventDiv.className = `event ${getEventClass(eventType)}`;
+
+        const time = new Date(timestamp * 1000).toLocaleTimeString();
+        let content = `[${time}] ${eventType}`;
+
+        if (data.status) {
+          content += `: ${data.status}`;
+        }
+        if (data.error) {
+          content += ` - Error: ${data.error}`;
+        }
+
+        eventDiv.textContent = content;
+        eventsDiv.appendChild(eventDiv);
+        eventsDiv.scrollTop = eventsDiv.scrollHeight;
+      }
+
+      function getEventClass(eventType) {
+        if (eventType.includes("error")) return "error";
+        if (eventType.includes("completed")) return "success";
+        return "info";
+      }
+
+      function startResearch() {
+        const question = document.getElementById("question").value.trim();
+        if (!question) {
+          alert("Please enter a research question");
+          return;
+        }
+
+        // Clear previous events
+        document.getElementById("events").innerHTML = "";
+        document.getElementById("finalAnswer").style.display = "none";
+
+        // Connect to WebSocket
+        ws = new WebSocket("ws://localhost:8000/ws/research");
+
+        ws.onopen = function () {
+          updateStatus("Connected", "connected");
+          isConnected = true;
+          document.getElementById("startBtn").disabled = true;
+          document.getElementById("stopBtn").disabled = false;
+
+          // Send research request
+          const request = {
+            message: question,
+            user_id: "test_user",
+          };
+          ws.send(JSON.stringify(request));
+        };
+
+        ws.onmessage = function (event) {
+          try {
+            const data = JSON.parse(event.data);
+            console.log("Received:", data);
+
+            const eventType = data.event_type || data.type;
+            const timestamp = data.timestamp || Date.now() / 1000;
+
+            addEvent(eventType, data.data || {}, timestamp);
+
+            // Handle final answer
+            if (
+              eventType === "research_completed" &&
+              data.data &&
+              data.data.final_answer
+            ) {
+              document.getElementById("finalAnswer").textContent =
+                data.data.final_answer;
+              document.getElementById("finalAnswer").style.display = "block";
+            }
+
+            // Handle completion
+            if (
+              eventType === "research_completed" ||
+              eventType === "research_failed" ||
+              eventType === "error"
+            ) {
+              document.getElementById("startBtn").disabled = false;
+              document.getElementById("stopBtn").disabled = true;
+            }
+          } catch (e) {
+            console.error("Error parsing message:", e);
+            addEvent(
+              "parse_error",
+              { error: "Failed to parse message" },
+              Date.now() / 1000
+            );
+          }
+        };
+
+        ws.onclose = function () {
+          updateStatus("Disconnected", "disconnected");
+          isConnected = false;
+          document.getElementById("startBtn").disabled = false;
+          document.getElementById("stopBtn").disabled = true;
+        };
+
+        ws.onerror = function (error) {
+          console.error("WebSocket error:", error);
+          updateStatus("Connection Error", "disconnected");
+          addEvent(
+            "connection_error",
+            { error: "WebSocket connection failed" },
+            Date.now() / 1000
+          );
+        };
+      }
+
+      function stopResearch() {
+        if (ws) {
+          ws.close();
+        }
+      }
+
+      // Auto-start test on page load
+      window.onload = function () {
+        setTimeout(() => {
+          if (document.getElementById("question").value) {
+            startResearch();
+          }
+        }, 1000);
+      };
+    </script>
+  </body>
+</html>

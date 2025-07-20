@@ -1,20 +1,53 @@
 # api_main.py
 import uuid
 import os
+import json
+import asyncio
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Dict, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+# Load environment variables FIRST, before any other imports
+load_dotenv()
+
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
+from kognys.graph.unified_executor import unified_executor
 from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb
 from kognys.services.error_handler import generate_error_response
 
-# Load environment variables
-load_dotenv() 
+# Import time for timestamps
+import time
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except:
+                # Remove dead connections
+                self.active_connections.remove(connection)
+
+manager = ConnectionManager()
 
 def generate_paper_id(question: str, content: str) -> str:
     """Generates a consistent, unique ID for a paper."""
@@ -57,6 +90,22 @@ class CreatePaperRequest(BaseModel):
 class PaperResponse(BaseModel):
     paper_id: str
     paper_content: str
+
+class StreamEvent(BaseModel):
+    event_type: str
+    data: dict
+    timestamp: float
+
+async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
+    """Generate Server-Sent Events stream for the research process."""
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = KognysState(question=question)
+    
+    # Use the unified executor
+    async for event in unified_executor.execute_streaming(initial_state, config):
+        # Format as SSE with proper JSON serialization
+        sse_data = f"data: {json.dumps(event)}\n\n"
+        yield sse_data
 
 # API Endpoints
 
@@ -102,6 +151,159 @@ def create_paper(request: CreatePaperRequest):
         paper_id=paper_id,
         paper_content=final_answer
     )
+
+@app.post("/papers/stream")
+async def create_paper_stream(request: CreatePaperRequest):
+    """Initiates a new research task with streaming updates via Server-Sent Events."""
+    print(f"Received streaming request from user '{request.user_id}' to research: '{request.message}'")
+    
+    return StreamingResponse(
+        generate_sse_stream(request.message, request.user_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
+
+@app.websocket("/ws/research")
+async def websocket_research(websocket: WebSocket):
+    """WebSocket endpoint for real-time research streaming with queue-based event handling."""
+    await manager.connect(websocket)
+    
+    try:
+        # Wait for the initial message with research parameters
+        data = await websocket.receive_text()
+        request_data = json.loads(data)
+        
+        question = request_data.get("message", "")
+        user_id = request_data.get("user_id", "anonymous")
+        
+        print(f"WebSocket: Received research request from user '{user_id}' to research: '{question}'")
+        
+        # Send connection confirmation
+        await websocket.send_text(json.dumps({
+            "type": "connection_established",
+            "data": {
+                "message": "Connected to Kognys Research WebSocket",
+                "question": question,
+                "user_id": user_id
+            },
+            "timestamp": time.time()
+        }))
+        
+        # Create thread-safe queue for events
+        import queue
+        event_queue = queue.Queue()
+        
+        # Set up event callback that puts events in queue
+        def queue_event_callback(event_type: str, data: Dict[str, Any]):
+            print(f"🔔 Queueing event: {event_type}")
+            event_queue.put({
+                "event_type": event_type,
+                "data": data,
+                "timestamp": time.time()
+            })
+        
+        # Add callback to unified executor
+        print(f"📝 Adding queue callback to unified executor")
+        unified_executor.add_event_callback(queue_event_callback)
+        print(f"📝 Callback added, total callbacks: {len(unified_executor.event_callbacks)}")
+        
+        # Execute research using unified executor in background
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        initial_state = KognysState(question=question)
+        
+        # Start research in background thread
+        import threading
+        research_result = {"final_result": None, "error": None}
+        
+        def run_research():
+            try:
+                print(f"🔧 Background thread: Starting research execution")
+                result = unified_executor.execute_sync(initial_state, config)
+                research_result["final_result"] = result
+                print(f"🔧 Background thread: Research completed")
+            except Exception as e:
+                print(f"🔧 Background thread: Research failed: {e}")
+                research_result["error"] = str(e)
+                # Queue error event
+                event_queue.put({
+                    "event_type": "validation_error" if isinstance(e, ValueError) else "error",
+                    "data": {
+                        "error": str(e),
+                        "status": "Research execution failed",
+                        "suggestion": "Please try again or rephrase your question."
+                    },
+                    "timestamp": time.time()
+                })
+        
+        research_thread = threading.Thread(target=run_research)
+        research_thread.start()
+        
+        # Stream events to client as they arrive
+        print(f"🚀 Starting event streaming loop...")
+        while True:
+            try:
+                # Get event from queue with timeout
+                event = event_queue.get(timeout=1.0)
+                print(f"📤 Sending event to client: {event['event_type']}")
+                
+                # Send event to WebSocket client
+                await websocket.send_text(json.dumps(event))
+                
+                # If this is a final event, break
+                if event["event_type"] in ["research_completed", "research_failed", "error", "validation_error"]:
+                    print(f"🏁 Final event sent: {event['event_type']}")
+                    break
+                    
+            except queue.Empty:
+                # Check if research thread is still running
+                if not research_thread.is_alive():
+                    print(f"🔚 Research thread finished, breaking event loop")
+                    break
+                continue
+        
+        # Wait for research thread to finish
+        research_thread.join(timeout=5.0)
+        
+        # Send final completion message
+        await websocket.send_text(json.dumps({
+            "type": "research_completed",
+            "data": {
+                "message": "Research process completed",
+                "status": "success"
+            },
+            "timestamp": time.time()
+        }))
+        
+        print(f"✅ WebSocket research completed successfully")
+        
+    except WebSocketDisconnect:
+        print("WebSocket: Client disconnected")
+        manager.disconnect(websocket)
+    except json.JSONDecodeError:
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "error": "Invalid JSON format in request",
+                "status": "error"
+            },
+            "timestamp": time.time()
+        }))
+    except Exception as e:
+        print(f"WebSocket: Error during research: {e}")
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "data": {
+                "error": str(e),
+                "status": "error"
+            },
+            "timestamp": time.time()
+        }))
+        manager.disconnect(websocket)
 
 @app.get("/papers/{paper_id}", response_model=PaperResponse)
 def get_paper(paper_id: str):
