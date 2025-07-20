@@ -84,14 +84,29 @@ def initialize_aip_agents():
             (AIP_ORCHESTRATOR_ID, AIP_SYNTHESIZER_ID),
         ]
         
-        for buyer, seller in auth_pairs:
+        for i, (buyer, seller) in enumerate(auth_pairs):
             if buyer in created_agents and seller in created_agents:
                 try:
+                    # Add delay between authorization calls to prevent nonce conflicts
+                    if i > 0:
+                        print(f"  - Waiting 2s before next authorization...")
+                        import time
+                        time.sleep(2)
+                    
                     success = buy_agent_auth(buyer, seller)
                     if success:
                         print(f"  - ✅ {buyer} authorized to access {seller}")
+                    else:
+                        print(f"  - ❌ Authorization failed: {buyer} → {seller}")
                 except Exception as e:
                     print(f"  - ⚠️  Auth failed: {buyer} → {seller}: {e}")
+            else:
+                missing_agents = []
+                if buyer not in created_agents:
+                    missing_agents.append(f"buyer '{buyer}'")
+                if seller not in created_agents:
+                    missing_agents.append(f"seller '{seller}'")
+                print(f"  - ⚠️  Skipping auth {buyer} → {seller}: {' and '.join(missing_agents)} not created")
     
     print(f"\n--- AIP initialization complete: {len(created_agents)}/{len(agents)} agents ready ---")
     return len(created_agents) > 0

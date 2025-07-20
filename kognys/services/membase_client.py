@@ -371,8 +371,18 @@ def send_agent_message(from_agent_id: str, to_agent_id: str, action: str, messag
         print(f"  - ❌ FAILED: Could not send message. Error: {e}")
         return {"error": str(e)}
 
-def buy_agent_auth(buyer_id: str, seller_id: str) -> bool:
-    """Authorizes one agent to access another agent's data."""
+def buy_agent_auth(buyer_id: str, seller_id: str, max_retries: int = 3) -> bool:
+    """Authorizes one agent to access another agent's data with retry logic."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not buyer_id or not seller_id:
+        print(f"  - ❌ FAILED: Both buyer_id and seller_id must be provided")
+        return False
+    if buyer_id == seller_id:
+        print(f"  - ⚠️ SKIPPED: Cannot authorize agent to itself ({buyer_id})")
+        return True  # Not a failure, just unnecessary
+        
     auth_url = f"{API_BASE_URL}/api/v1/agents/buy-auth"
     payload = {
         "buyer_id": buyer_id,
@@ -381,15 +391,37 @@ def buy_agent_auth(buyer_id: str, seller_id: str) -> bool:
     
     print(f"\n--- 🔐 Buying Agent Authorization ---")
     print(f"  - Buyer: {buyer_id} → Seller: {seller_id}")
+    print(f"  - Endpoint: POST {auth_url}")
     
-    try:
-        response = requests.post(auth_url, json=payload)
-        response.raise_for_status()
-        print(f"  - ✅ Success: Authorization granted.")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(auth_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Authorization granted.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                ('nonce too low' in str(e.response.text) or 'nonce' in str(e.response.text).lower())
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 3  # Longer wait for auth: 3s, 6s, 9s
+                print(f"  - ⚠️ Nonce/blockchain error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  - Response Status: {e.response.status_code}")
+                print(f"  - Response Body: {e.response.text}")
+            return False
+    
+    return False
 
 def check_agent_auth(agent_id: str, target_id: str) -> bool:
     """Checks if an agent has authorization to access another agent's data."""
