@@ -101,10 +101,39 @@ async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = KognysState(question=question)
     
+    # Store final result and paper ID
+    final_result = None
+    paper_id = None
+    
     # Use the unified executor
     async for event in unified_executor.execute_streaming(initial_state, config):
+        # Add paper_id to event data if we have one
+        if paper_id:
+            event["data"]["paper_id"] = paper_id
+        
+        # Check if this is the research_completed event to capture final result
+        if event.get("event_type") == "research_completed" and event.get("data", {}).get("final_answer"):
+            final_result = event["data"]["final_answer"]
+            paper_id = generate_paper_id(question, final_result)
+            event["data"]["paper_id"] = paper_id
+        
         # Format as SSE with proper JSON serialization
         sse_data = f"data: {json.dumps(event)}\n\n"
+        yield sse_data
+    
+    # Send final paper summary if we have a result
+    if final_result and paper_id:
+        final_event = {
+            "event_type": "paper_generated",
+            "data": {
+                "paper_id": paper_id,
+                "paper_content": final_result,
+                "message": "Research paper successfully generated",
+                "status": "completed"
+            },
+            "timestamp": time.time()
+        }
+        sse_data = f"data: {json.dumps(final_event)}\n\n"
         yield sse_data
 
 # API Endpoints

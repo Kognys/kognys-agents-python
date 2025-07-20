@@ -57,7 +57,13 @@ curl -X POST http://localhost:8000/papers/stream \
   --no-buffer
 ```
 
-Returns real-time events as they occur during research.
+Returns real-time events as they occur during research. Includes paper ID in events once research completes.
+
+**Stream Events Include:**
+
+- Real-time progress updates
+- Paper ID when research completes
+- Final `paper_generated` event with complete paper content and ID
 
 ### 3. WebSocket (Real-Time)
 
@@ -82,6 +88,7 @@ Receive real-time events:
 - `criticisms_received` - Critical feedback received
 - `orchestrator_decision` - Next step decided
 - `research_completed` - Final result ready
+- `paper_generated` - Paper ID and full content available (SSE only)
 - `validation_error` - Question needs improvement
 
 ---
@@ -115,6 +122,10 @@ ws.onmessage = (event) => {
       break;
     case "research_completed":
       console.log("Research done:", data.data.final_answer);
+      break;
+    case "paper_generated":
+      console.log("Paper ID:", data.data.paper_id);
+      console.log("Paper ready:", data.data.paper_content);
       break;
     case "validation_error":
       console.log("Error:", data.data.error);
