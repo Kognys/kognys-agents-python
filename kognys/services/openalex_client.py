@@ -8,7 +8,7 @@ OPENALEX_API_URL = "https://api.openalex.org/works"
 def search_works(query: str, k: int = 5) -> list[dict]:
     params = {"search": query, "per-page": k, "mailto": MAILTO}
     try:
-        response = requests.get(OPENALEX_API_URL, params=params)
+        response = requests.get(OPENALEX_API_URL, params=params, timeout=10)
         response.raise_for_status()
         results = response.json().get("results", [])
         

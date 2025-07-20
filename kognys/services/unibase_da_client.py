@@ -48,7 +48,7 @@ def archive_research_packet(
     print(f"  - Data Size: {payload_size / 1024:.2f} KB")
 
     try:
-        response = requests.post(upload_url, headers=_get_headers(), json=payload)
+        response = requests.post(upload_url, headers=_get_headers(), json=payload, timeout=30)
         response.raise_for_status()
         response_data = response.json()
         duration = time.time() - start_time

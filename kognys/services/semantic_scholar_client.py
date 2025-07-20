@@ -6,7 +6,7 @@ SEMANTIC_SCHOLAR_API_URL = "https://api.semanticscholar.org/graph/v1/paper/searc
 def search_semantic_scholar(query: str, k: int = 5) -> list[dict]:
     params = {"query": query, "limit": k, "fields": "title,abstract,url"}
     try:
-        response = requests.get(SEMANTIC_SCHOLAR_API_URL, params=params)
+        response = requests.get(SEMANTIC_SCHOLAR_API_URL, params=params, timeout=10)
         response.raise_for_status()
         results = response.json().get("data", [])
         

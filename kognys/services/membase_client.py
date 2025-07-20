@@ -48,7 +48,7 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
     
     try:
         check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}"
-        response = requests.get(check_url)
+        response = requests.get(check_url, timeout=30)
         if response.status_code == 200:
             print(f"  - ✅ Agent '{agent_id}' is already registered.")
             return True
@@ -62,7 +62,7 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
     print(f"  - Payload: {payload}")
     
     try:
-        response = requests.post(register_url, json=payload)
+        response = requests.post(register_url, json=payload, timeout=30)
         response.raise_for_status()
         response_data = response.json()
         tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -91,7 +91,7 @@ def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
 
     for attempt in range(max_retries):
         try:
-            response = requests.post(task_url, json=payload)
+            response = requests.post(task_url, json=payload, timeout=30)
             response.raise_for_status()
             response_data = response.json()
             tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -125,7 +125,7 @@ def check_task_exists(task_id: str) -> bool:
     
     check_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}"
     try:
-        response = requests.get(check_url)
+        response = requests.get(check_url, timeout=30)
         return response.status_code == 200
     except requests.exceptions.RequestException:
         return False
@@ -160,7 +160,7 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
     
     for attempt in range(max_retries):
         try:
-            response = requests.post(task_url, json=payload)
+            response = requests.post(task_url, json=payload, timeout=30)
             response.raise_for_status()
             response_data = response.json()
             tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -222,7 +222,7 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
 
     for attempt in range(max_retries):
         try:
-            response = requests.post(task_url, json=payload)
+            response = requests.post(task_url, json=payload, timeout=30)
             response.raise_for_status()
             response_data = response.json()
             tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -268,7 +268,7 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     print(f"  - Payload structure: documents={{'content': '...', 'metadata': {metadata!r}}}")
 
     try:
-        response = requests.post(kb_url, json=payload)
+        response = requests.post(kb_url, json=payload, timeout=30)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -295,9 +295,9 @@ def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) 
 
     try:
         # First, ensure the conversation exists
-        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id})
+        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id}, timeout=30)
         # Then, add the messages
-        response = requests.post(convo_url, json=payload)
+        response = requests.post(convo_url, json=payload, timeout=30)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -316,7 +316,7 @@ def get_paper_from_kb(paper_id: str) -> dict | None:
     params = {"query": paper_id, "metadata_filter": metadata_filter, "top_k": 1}
     try:
         print(f"--- MEMBASE CLIENT: Searching for paper '{paper_id}' in KB... ---")
-        response = requests.get(search_url, params=params)
+        response = requests.get(search_url, params=params, timeout=30)
         response.raise_for_status()
         results = response.json().get("results", [])
         if not results:
@@ -338,7 +338,7 @@ def get_papers_by_user_id(user_id: str, top_k: int = 10) -> list:
     params = {"query": "", "metadata_filter": metadata_filter, "top_k": top_k}
     try:
         print(f"--- MEMBASE CLIENT: Searching for papers by user '{user_id}' in KB... ---")
-        response = requests.get(search_url, params=params)
+        response = requests.get(search_url, params=params, timeout=30)
         response.raise_for_status()
         results = response.json().get("results", [])
         papers = []
@@ -370,7 +370,7 @@ def create_aip_agent(agent_id: str, description: str = "", conversation_id: str 
     print(f"  - Agent ID: {agent_id}")
     
     try:
-        response = requests.post(create_url, json=payload)
+        response = requests.post(create_url, json=payload, timeout=30)
         response.raise_for_status()
         print(f"  - ✅ Success: AIP Agent '{agent_id}' created.")
         return response.json()
@@ -397,7 +397,7 @@ def query_aip_agent(agent_id: str, query: str, conversation_id: str = None,
     print(f"  - Query: {query[:100]}...")
     
     try:
-        response = requests.post(query_url, json=payload)
+        response = requests.post(query_url, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         print(f"  - ✅ Success: Received response from agent.")
@@ -420,7 +420,7 @@ def send_agent_message(from_agent_id: str, to_agent_id: str, action: str, messag
     print(f"  - Action: {action}")
     
     try:
-        response = requests.post(message_url, json=payload)
+        response = requests.post(message_url, json=payload, timeout=30)
         response.raise_for_status()
         print(f"  - ✅ Success: Message sent.")
         return response.json()
@@ -452,7 +452,7 @@ def buy_agent_auth(buyer_id: str, seller_id: str, max_retries: int = 3) -> bool:
     
     for attempt in range(max_retries):
         try:
-            response = requests.post(auth_url, json=payload)
+            response = requests.post(auth_url, json=payload, timeout=30)
             response.raise_for_status()
             response_data = response.json()
             tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -504,7 +504,7 @@ def check_agent_auth(agent_id: str, target_id: str) -> bool:
     check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}/has-auth/{target_id}"
     
     try:
-        response = requests.get(check_url)
+        response = requests.get(check_url, timeout=30)
         response.raise_for_status()
         result = response.json()
         return result.get("has_auth", False)
@@ -523,7 +523,7 @@ def route_request(request_text: str, top_k: int = 3) -> list:
     print(f"  - Request: {request_text[:100]}...")
     
     try:
-        response = requests.post(route_url, json=payload)
+        response = requests.post(route_url, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         routes = result.get("routes", [])

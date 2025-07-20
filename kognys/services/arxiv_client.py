@@ -7,7 +7,7 @@ ARXIV_API_URL = "http://export.arxiv.org/api/query"
 def search_arxiv(query: str, k: int = 5) -> list[dict]:
     params = {"search_query": f'all:"{query}"', "start": 0, "max_results": k, "sortBy": "relevance"}
     try:
-        response = requests.get(ARXIV_API_URL, params=params)
+        response = requests.get(ARXIV_API_URL, params=params, timeout=15)
         response.raise_for_status()
         root = ET.fromstring(response.content)
         
