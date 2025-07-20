@@ -150,8 +150,19 @@ async def create_paper(request: CreatePaperRequest):
             )
             raise HTTPException(status_code=400, detail=error_message)
         else:
-            print(f"An unexpected ValueError occurred: {e}")
-            raise HTTPException(status_code=500, detail="An unexpected error occurred in the agent.")
+            print(f"❌ Unexpected ValueError occurred: {e}")
+            print(f"❌ Error type: {type(e).__name__}")
+            print(f"❌ Full error details: {repr(e)}")
+            # For debugging: show the actual error in development
+            error_detail = f"ValueError in agent processing: {str(e)}" if os.getenv("DEBUG_MODE", "false").lower() == "true" else "An unexpected error occurred in the agent."
+            raise HTTPException(status_code=500, detail=error_detail)
+    except Exception as e:
+        print(f"❌ Unexpected exception occurred: {e}")
+        print(f"❌ Error type: {type(e).__name__}")
+        print(f"❌ Full error details: {repr(e)}")
+        # For debugging: show the actual error in development
+        error_detail = f"Exception in agent processing: {str(e)}" if os.getenv("DEBUG_MODE", "false").lower() == "true" else "An unexpected error occurred in the agent."
+        raise HTTPException(status_code=500, detail=error_detail)
 
     final_answer = final_state_result.get("final_answer")
     
