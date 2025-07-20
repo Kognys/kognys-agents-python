@@ -1,17 +1,14 @@
 # kognys/services/semantic_scholar_client.py
-import os
 import requests
 
 SEMANTIC_SCHOLAR_API_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 
 def search_semantic_scholar(query: str, k: int = 5) -> list[dict]:
-    """Searches Semantic Scholar and returns documents in a standardized format."""
     params = {"query": query, "limit": k, "fields": "title,abstract,url"}
     try:
         response = requests.get(SEMANTIC_SCHOLAR_API_URL, params=params)
         response.raise_for_status()
-        data = response.json()
-        results = data.get("data", [])
+        results = response.json().get("data", [])
         
         # --- FIX: Standardize the output keys ---
         formatted_docs = []
