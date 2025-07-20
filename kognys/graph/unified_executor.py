@@ -24,14 +24,83 @@ class UnifiedExecutor:
         self.graph = graph
         self.event_callbacks = []
         self._stop_event = threading.Event()
+        # Store recent events for logs endpoint (max 100 events)
+        self._recent_events = []
+        self._max_events = 100
+        self._events_lock = threading.Lock()
     
     def add_event_callback(self, callback: Callable[[str, Dict[str, Any]], None]):
         """Add a callback function to be called when events occur."""
         self.event_callbacks.append(callback)
     
-    def _emit_event(self, event_type: str, data: Dict[str, Any]):
+    def get_recent_events(self, limit: int = 50) -> list:
+        """Get recent system events for logs display."""
+        with self._events_lock:
+            return self._recent_events[-limit:] if self._recent_events else []
+    
+    async def stream_recent_events(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream recent events for real-time logs monitoring."""
+        # Return existing events first
+        recent = self.get_recent_events()
+        for event in recent:
+            yield event
+        
+        # Then stream new events as they arrive
+        event_queue = queue.Queue()
+        
+        def log_callback(event_type: str, data: Dict[str, Any]):
+            # Get the most recent event (which includes agent info)
+            with self._events_lock:
+                if self._recent_events:
+                    event_queue.put(self._recent_events[-1])
+        
+        self.add_event_callback(log_callback)
+        
+        try:
+            while True:
+                try:
+                    event = event_queue.get(timeout=30)  # 30 second timeout
+                    yield event
+                except queue.Empty:
+                    # Send heartbeat to keep connection alive
+                    yield {
+                        "event_type": "heartbeat",
+                        "data": {"status": "alive"},
+                        "timestamp": time.time(),
+                        "agent": "system"
+                    }
+        except Exception as e:
+            print(f"Error in log streaming: {e}")
+            yield {
+                "event_type": "error",
+                "data": {"error": str(e)},
+                "timestamp": time.time(),
+                "agent": "system"
+            }
+    
+    def _emit_event(self, event_type: str, data: Dict[str, Any], agent: str = None):
         """Emit an event to all registered callbacks."""
         print(f"📡 UnifiedExecutor emitting: {event_type}")
+        
+        # Create event with timestamp and agent info
+        event = {
+            "event_type": event_type,
+            "data": data.copy(),  # Copy to avoid modifying original
+            "timestamp": time.time(),
+            "agent": agent
+        }
+        
+        # Add agent to data if provided (for backward compatibility)
+        if agent:
+            event["data"]["agent"] = agent
+        
+        # Store in recent events for logs endpoint
+        with self._events_lock:
+            self._recent_events.append(event)
+            # Keep only the most recent events
+            if len(self._recent_events) > self._max_events:
+                self._recent_events.pop(0)
+        
         if not self._stop_event.is_set():
             for callback in self.event_callbacks:
                 try:
@@ -49,7 +118,7 @@ class UnifiedExecutor:
             "question": initial_state.question,
             "task_id": config.get("configurable", {}).get("thread_id"),
             "status": "Starting research process..."
-        })
+        }, agent="system")
         
         try:
             print(f"📝 Executing graph with real-time streaming...")
@@ -71,16 +140,18 @@ class UnifiedExecutor:
                     elif kind == "on_chain_stream":
                         # A streaming node is yielding a chunk
                         chunk = event["data"]["chunk"]
+                        node_name = event.get("name", "unknown")
+                        
                         if not chunk:
                             continue
                             
-                        # Check for our custom token keys
+                        # Check for our custom token keys and include agent name
                         if "draft_answer_token" in chunk:
-                            self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]})
+                            self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]}, agent="synthesizer")
                         elif "criticism_token" in chunk:
-                            self._emit_event("criticism_token", {"token": chunk["criticism_token"]})
+                            self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
                         elif "final_answer_token" in chunk:
-                            self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]})
+                            self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
 
                     elif kind == "on_chain_end":
                         # A node has finished executing
@@ -120,7 +191,7 @@ class UnifiedExecutor:
                     self._emit_event("research_failed", {
                         "error": "No final answer generated",
                         "status": "Research process failed to generate a final answer"
-                    })
+                    }, agent="system")
             else:
                  # This case is now handled by the 'publisher' node completion event
                  pass
@@ -135,12 +206,12 @@ class UnifiedExecutor:
                     "error": str(e),
                     "status": "Question validation failed",
                     "suggestion": "Please rephrase your question to be more specific and research-worthy."
-                })
+                }, agent="input_validator")
             else:
                 self._emit_event("error", {
                     "error": str(e),
                     "status": "An error occurred during research"
-                })
+                }, agent="system")
             raise
         finally:
             self._stop_event.set()
@@ -150,26 +221,29 @@ class UnifiedExecutor:
         if not state:
             return
 
+        # Map node names to agent names for better frontend display
+        agent_name = node_name.replace("_", " ").title()
+        
         if node_name == "input_validator" and state.get("validated_question"):
             self._emit_event("question_validated", {
                 "validated_question": state["validated_question"],
                 "status": "Question validated and refined"
-            })
+            }, agent="input_validator")
         elif node_name == "retriever" and state.get("documents"):
             self._emit_event("documents_retrieved", {
                 "document_count": len(state["documents"]),
                 "status": f"Retrieved {len(state['documents'])} relevant documents"
-            })
+            }, agent="retriever")
         elif node_name == "synthesizer" and state.get("draft_answer"):
             self._emit_event("draft_generated", {
                 "draft_length": len(state["draft_answer"]),
                 "status": "Initial draft generated"
-            })
+            }, agent="synthesizer")
         elif node_name == "challenger" and state.get("criticisms"):
             self._emit_event("criticisms_received", {
                 "criticism_count": len(state["criticisms"]),
                 "status": f"Received {len(state['criticisms'])} criticisms for improvement"
-            })
+            }, agent="challenger")
         elif node_name == "orchestrator":
             decision = "unknown"
             if state.get("transcript") and len(state["transcript"]) > 0:
@@ -180,13 +254,13 @@ class UnifiedExecutor:
             self._emit_event("orchestrator_decision", {
                 "decision": decision,
                 "status": f"Orchestrator decided: {decision}"
-            })
+            }, agent="orchestrator")
         elif node_name == "publisher" and state.get("final_answer"):
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
                 "final_answer": state["final_answer"],
                 "status": "Research completed successfully"
-            })
+            }, agent="publisher")
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the graph asynchronously with event emission."""
@@ -210,11 +284,18 @@ class UnifiedExecutor:
         event_queue = queue.Queue()
         
         def event_callback(event_type: str, data: Dict[str, Any]):
-            event_queue.put({
-                "event_type": event_type,
-                "data": data,
-                "timestamp": time.time()
-            })
+            # Get the most recent stored event which includes agent info
+            with self._events_lock:
+                if self._recent_events:
+                    event_queue.put(self._recent_events[-1])
+                else:
+                    # Fallback if no stored event
+                    event_queue.put({
+                        "event_type": event_type,
+                        "data": data,
+                        "timestamp": time.time(),
+                        "agent": "unknown"
+                    })
         
         # Add our callback
         self.add_event_callback(event_callback)
@@ -227,7 +308,8 @@ class UnifiedExecutor:
                 event_queue.put({
                     "event_type": "error",
                     "data": {"error": str(e)},
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "agent": "system"
                 })
                 raise
         

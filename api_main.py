@@ -84,6 +84,13 @@ class StreamEvent(BaseModel):
     event_type: str
     data: dict
     timestamp: float
+    agent: str = None
+
+class LogEvent(BaseModel):
+    event_type: str
+    data: dict
+    timestamp: float
+    agent: str
 
 async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
     """Generate Server-Sent Events stream for the research process."""
@@ -237,3 +244,48 @@ def get_user_papers(user_id: str, limit: int = 10):
     ]
     
     return UserPapersResponse(user_id=normalized_user_id, papers=user_papers)
+
+@app.get("/logs", response_model=list[LogEvent])
+def get_recent_logs(limit: int = 50):
+    """Retrieves recent system logs for debugging and monitoring."""
+    print(f"Request for recent logs (limit: {limit})")
+    
+    try:
+        recent_events = unified_executor.get_recent_events(limit)
+        return recent_events
+    except Exception as e:
+        print(f"Error retrieving logs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve system logs")
+
+@app.get("/logs/stream")
+async def stream_system_logs():
+    """Streams real-time system logs via Server-Sent Events."""
+    print("Starting real-time log streaming...")
+    
+    async def generate_log_stream():
+        """Generate SSE stream for system logs."""
+        try:
+            async for event in unified_executor.stream_recent_events():
+                # Format as SSE with proper JSON serialization
+                sse_data = f"data: {json.dumps(event)}\n\n"
+                yield sse_data
+        except Exception as e:
+            print(f"Error in log streaming: {e}")
+            error_event = {
+                "event_type": "stream_error",
+                "data": {"error": str(e)},
+                "timestamp": time.time(),
+                "agent": "system"
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+    
+    return StreamingResponse(
+        generate_log_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
