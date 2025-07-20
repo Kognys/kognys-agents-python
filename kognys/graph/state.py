@@ -9,6 +9,7 @@ class KognysState(BaseModel):
     """
     # --- Input and Core State ---
     question: str
+    user_id: str | None = Field(default=None, description="The ID of the user who initiated this research.")
     paper_id: str | None = Field(default=None, description="The unique, content-addressable ID for the final paper.")
     task_id: str | None = Field(default=None, description="The on-chain task ID for this research job.")
 

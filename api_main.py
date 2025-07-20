@@ -18,7 +18,7 @@ load_dotenv()
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
 from kognys.graph.unified_executor import unified_executor
-from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb
+from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb, get_papers_by_user_id
 from kognys.services.error_handler import generate_error_response
 
 # Import time for timestamps
@@ -91,6 +91,17 @@ class PaperResponse(BaseModel):
     paper_id: str
     paper_content: str
 
+class UserPaper(BaseModel):
+    paper_id: str
+    original_question: str
+    content: str
+    user_id: str
+
+class UserPapersResponse(BaseModel):
+    user_id: str
+    papers: list[UserPaper]
+    total_count: int
+
 class StreamEvent(BaseModel):
     event_type: str
     data: dict
@@ -99,7 +110,7 @@ class StreamEvent(BaseModel):
 async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
     """Generate Server-Sent Events stream for the research process."""
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    initial_state = KognysState(question=question)
+    initial_state = KognysState(question=question, user_id=user_id)
     
     # Store final result and paper ID
     final_result = None
@@ -149,7 +160,7 @@ def create_paper(request: CreatePaperRequest):
     print(f"Received request from user '{request.user_id}' to research: '{request.message}'")
     
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    initial_state = KognysState(question=request.message)
+    initial_state = KognysState(question=request.message, user_id=request.user_id)
     
     final_state_result = None
     try:
@@ -243,7 +254,7 @@ async def websocket_research(websocket: WebSocket):
         
         # Execute research using unified executor in background
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-        initial_state = KognysState(question=question)
+        initial_state = KognysState(question=question, user_id=user_id)
         
         # Start research in background thread
         import threading
@@ -347,4 +358,28 @@ def get_paper(paper_id: str):
     return PaperResponse(
         paper_id=paper_data.get("id", paper_id),
         paper_content=paper_data.get("message", "Content not available.")
+    )
+
+@app.get("/users/{user_id}/papers", response_model=UserPapersResponse)
+def get_user_papers(user_id: str, limit: int = 10):
+    """Retrieves all research papers for a specific user."""
+    print(f"Request to get papers for user: {user_id}")
+    
+    papers_data = get_papers_by_user_id(user_id, top_k=limit)
+    
+    # Convert to UserPaper models
+    papers = [
+        UserPaper(
+            paper_id=paper["paper_id"],
+            original_question=paper["original_question"],
+            content=paper["content"],
+            user_id=paper["user_id"]
+        )
+        for paper in papers_data
+    ]
+    
+    return UserPapersResponse(
+        user_id=user_id,
+        papers=papers,
+        total_count=len(papers)
     )

@@ -1,8 +1,9 @@
 # kognys/agents/synthesizer.py
 from langchain_core.prompts import ChatPromptTemplate
-from kognys.config import powerful_llm
+from kognys.config import powerful_llm, ENABLE_AIP_AGENTS, AIP_SYNTHESIZER_ID, AIP_CHALLENGER_ID
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
+from kognys.services.membase_client import query_aip_agent, send_agent_message
 
 _PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -37,14 +38,51 @@ def node(state: KognysState) -> dict:
     # Handle both string and list content types
     if isinstance(response.content, list):
         # If content is a list, join it or take the first element
-        content = " ".join(str(item) for item in response.content) if response.content else ""
+        draft_answer = " ".join(str(item) for item in response.content) if response.content else ""
     else:
-        content = str(response.content)
+        draft_answer = str(response.content)
     
-    update_dict = {"draft_answer": content, "criticisms": []}
+    # If AIP is enabled, get additional insights from AIP synthesizer
+    if ENABLE_AIP_AGENTS:
+        try:
+            aip_prompt = f"""Research Question: {state.validated_question}
+
+Draft Answer (version {state.revisions + 1}):
+{draft_answer[:1500]}{'...' if len(draft_answer) > 1500 else ''}
+
+Please provide:
+1. Key insights that might strengthen this answer
+2. Important connections between the sources
+3. Suggestions for clarity and coherence
+
+Previous criticisms addressed: {criticisms_str}"""
+            
+            aip_response = query_aip_agent(
+                agent_id=AIP_SYNTHESIZER_ID,
+                query=aip_prompt,
+                conversation_id=f"research-{state.paper_id}"
+            )
+            
+            if aip_response.get("response"):
+                print("---SYNTHESIZER: AIP agent provided enhancement suggestions---")
+                # Could integrate suggestions into the draft or store for challenger
+                
+                # Optionally notify challenger about the synthesis
+                if state.revisions > 0:
+                    send_agent_message(
+                        from_agent_id=AIP_SYNTHESIZER_ID,
+                        to_agent_id=AIP_CHALLENGER_ID,
+                        action="inform",
+                        message=f"Synthesized revision {state.revisions + 1} addressing criticisms"
+                    )
+                    
+        except Exception as e:
+            print(f"---SYNTHESIZER: AIP enhancement failed: {e}, continuing with standard synthesis---")
     
-    # Create a safe hash from the content string
-    content_hash = hash(content) if content else 0
+    update_dict = {"draft_answer": draft_answer, "criticisms": []}
+    
+    # Create a safe hash from the draft answer string
+    content_hash = hash(draft_answer) if draft_answer else 0
     
     update_dict["transcript"] = append_entry(
         state.transcript,

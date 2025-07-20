@@ -18,7 +18,7 @@ def node(state: KognysState) -> dict:
         agent_id = os.getenv("MEMBASE_ID")
 
         # 1. Store active memory in Membase
-        store_final_answer_in_kb(paper_id, final_answer, original_question)
+        store_final_answer_in_kb(paper_id, final_answer, original_question, state.user_id)
         store_transcript_in_memory(paper_id, state.transcript)
         
         # 2. Archive the full packet to the DA Layer

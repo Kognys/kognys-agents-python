@@ -6,3 +6,10 @@ VECTOR_DB=
 VECTOR_COL=
 
 MEMBASE_API_KEY=
+MEMBASE_API_URL=https://kognys-membaseaip-api-production.up.railway.app
+
+# AIP Agent Configuration (optional)
+ENABLE_AIP_AGENTS=false
+AIP_AGENT_PREFIX=kognys
+AIP_USE_ROUTING=true
+AIP_AGENT_TIMEOUT=30

@@ -1,6 +1,8 @@
 # kognys/graph/builder.py
 from langgraph.graph import StateGraph, END
 from kognys.graph.state import KognysState
+from kognys.config import ENABLE_AIP_AGENTS
+from kognys.utils.aip_init import initialize_aip_agents
 
 # Import the core agents
 from kognys.agents.input_validator import node as input_validator
@@ -9,6 +11,10 @@ from kognys.agents.synthesizer import node as synthesizer
 from kognys.agents.challenger import node as challenger
 from kognys.agents.orchestrator import node as orchestrator
 from kognys.agents.publisher import node as publisher
+
+# Initialize AIP agents if enabled
+if ENABLE_AIP_AGENTS:
+    initialize_aip_agents()
 
 _graph = StateGraph(KognysState)
 
