@@ -4,6 +4,7 @@ import requests
 import json
 import time
 from typing import List, Dict, Any
+from time import sleep
 
 API_BASE_URL = os.getenv("MEMBASE_API_URL")
 API_KEY = os.getenv("MEMBASE_API_KEY")
@@ -13,30 +14,69 @@ def _get_headers() -> dict:
         raise ValueError("MEMBASE_API_KEY is not set in the environment.")
     return {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
+def _parse_error_response(e: requests.exceptions.RequestException) -> tuple[str, str]:
+    """Parse error response to extract actual error code and message."""
+    if hasattr(e, 'response') and e.response is not None:
+        try:
+            error_data = json.loads(e.response.text)
+            detail = error_data.get('detail', '')
+            
+            # Extract actual error code from detail if in format "CODE: message"
+            if ': ' in detail and detail.split(': ')[0].isdigit():
+                actual_code = detail.split(': ')[0]
+                error_msg = detail.split(': ', 1)[1] if len(detail.split(': ', 1)) > 1 else detail
+                return actual_code, error_msg
+            else:
+                return str(e.response.status_code), detail
+                
+        except (json.JSONDecodeError, KeyError):
+            return str(e.response.status_code), e.response.text
+    
+    return "Unknown", str(e)
+
 def register_agent_if_not_exists(agent_id: str) -> bool:
     """Registers an agent on the blockchain via the Membase API."""
+    if not API_BASE_URL:
+        print(f"❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"❌ FAILED: Agent ID is not provided")
+        return False
+        
+    print(f"\n--- 🤖 Registering Agent on Blockchain ---")
+    print(f"  - Agent ID: {agent_id}")
+    
     try:
         check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}"
-        response = requests.get(check_url, headers=_get_headers())
+        response = requests.get(check_url)
         if response.status_code == 200:
-            print(f"✅ Agent '{agent_id}' is already registered.")
+            print(f"  - ✅ Agent '{agent_id}' is already registered.")
             return True
     except requests.exceptions.RequestException:
         pass
 
     register_url = f"{API_BASE_URL}/api/v1/agents/register"
     payload = {"agent_id": agent_id}
+    
+    print(f"  - Endpoint: POST {register_url}")
+    print(f"  - Payload: {payload}")
+    
     try:
-        response = requests.post(register_url, headers=_get_headers(), json=payload)
+        response = requests.post(register_url, json=payload)
         response.raise_for_status()
-        print(f"✅ Successfully registered agent '{agent_id}' on-chain.")
+        response_data = response.json()
+        tx_hash = response_data.get('transaction_hash', 'N/A')
+        print(f"  - ✅ Successfully registered agent '{agent_id}' on-chain.")
+        print(f"  - 🔗 Transaction Hash: {tx_hash}")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to register agent '{agent_id}'. Error: {e}")
+        error_code, error_msg = _parse_error_response(e)
+        print(f"  - ❌ FAILED ({error_code}): Failed to register agent '{agent_id}'")
+        print(f"     Error: {error_msg}")
         return False
 
-def create_task(task_id: str, price: int = 1000) -> bool:
-    """Creates a new task on the blockchain via the Membase API."""
+def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
+    """Creates a new task on the blockchain via the Membase API with retry logic for nonce errors."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -49,23 +89,37 @@ def create_task(task_id: str, price: int = 1000) -> bool:
     print(f"  - Task ID: {task_id}")
     print(f"  - Price: {price}")
 
-    try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Task '{task_id}' created.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Task '{task_id}' created.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Could not create task '{task_id}'")
+            print(f"     Error: {error_msg}")
+            return False
+    
+    return False
 
 def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
-    """Joins an existing task on the blockchain with retry logic for race conditions."""
+    """Joins an existing task on the blockchain with retry logic for nonce errors and race conditions."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -83,7 +137,7 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
     
     for attempt in range(max_retries):
         try:
-            response = requests.post(task_url, headers=_get_headers(), json=payload)
+            response = requests.post(task_url, json=payload)
             response.raise_for_status()
             response_data = response.json()
             tx_hash = response_data.get('transaction_hash', 'N/A')
@@ -91,31 +145,43 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
             print(f"  - 🔗 Transaction Hash: {tx_hash}")
             return True
         except requests.exceptions.RequestException as e:
-            # Check if this is a 404 "task does not exist" error that might be resolved with retry
-            is_retry_worthy = (
+            # Check for nonce errors (partner's fix)
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            # Check for race condition errors (our fix)
+            is_race_condition_error = (
                 hasattr(e, 'response') and 
                 e.response is not None and 
                 (e.response.status_code == 404 or e.response.status_code == 500) and
                 "does not exist" in e.response.text
             )
             
-            if is_retry_worthy and attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"  - ⏳ Retry {attempt + 1}/{max_retries}: Task not found, waiting {wait_time}s for sync...")
+            # Retry for both types of errors
+            if (is_nonce_error or is_race_condition_error) and attempt < max_retries - 1:
+                if is_nonce_error:
+                    wait_time = (attempt + 1) * 2  # Linear backoff for nonce: 2s, 4s, 6s
+                    print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                else:
+                    wait_time = 2 ** attempt  # Exponential backoff for race condition: 1s, 2s, 4s
+                    print(f"  - ⏳ Retry {attempt + 1}/{max_retries}: Task not found, waiting {wait_time}s for sync...")
+                
                 time.sleep(wait_time)
                 continue
-            else:
-                # Final attempt or non-retryable error
-                print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
-                if hasattr(e, 'response') and e.response is not None:
-                    print(f"  - Response Status: {e.response.status_code}")
-                    print(f"  - Response Body: {e.response.text}")
-                return False
+            
+            # Final attempt or non-retryable error
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Agent '{agent_id}' could not join task '{task_id}'")
+            print(f"     Error: {error_msg}")
+            return False
     
     return False
 
-def finish_task(task_id: str, agent_id: str) -> bool:
-    """Marks a task as finished on the blockchain."""
+def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Marks a task as finished on the blockchain with retry logic for nonce errors."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -131,20 +197,34 @@ def finish_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
 
-    try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            error_code, error_msg = _parse_error_response(e)
+            print(f"  - ❌ FAILED ({error_code}): Could not finish task '{task_id}'")
+            print(f"     Error: {error_msg}")
+            return False
+    
+    return False
 
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> bool:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""
@@ -163,7 +243,7 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     print(f"  - Data Size: {payload_size / 1024:.2f} KB")
 
     try:
-        response = requests.post(kb_url, headers=_get_headers(), json=payload)
+        response = requests.post(kb_url, json=payload)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -190,9 +270,9 @@ def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) 
 
     try:
         # First, ensure the conversation exists
-        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id}, headers=_get_headers())
+        requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id})
         # Then, add the messages
-        response = requests.post(convo_url, headers=_get_headers(), json=payload)
+        response = requests.post(convo_url, json=payload)
         response.raise_for_status()
         duration = time.time() - start_time
         print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
@@ -211,7 +291,7 @@ def get_paper_from_kb(paper_id: str) -> dict | None:
     params = {"query": paper_id, "metadata_filter": metadata_filter, "top_k": 1}
     try:
         print(f"--- MEMBASE CLIENT: Searching for paper '{paper_id}' in KB... ---")
-        response = requests.get(search_url, headers=_get_headers(), params=params)
+        response = requests.get(search_url, params=params)
         response.raise_for_status()
         results = response.json().get("results", [])
         if not results:
@@ -233,7 +313,7 @@ def get_papers_by_user_id(user_id: str, top_k: int = 10) -> list:
     params = {"query": "", "metadata_filter": metadata_filter, "top_k": top_k}
     try:
         print(f"--- MEMBASE CLIENT: Searching for papers by user '{user_id}' in KB... ---")
-        response = requests.get(search_url, headers=_get_headers(), params=params)
+        response = requests.get(search_url, params=params)
         response.raise_for_status()
         results = response.json().get("results", [])
         papers = []
@@ -265,7 +345,7 @@ def create_aip_agent(agent_id: str, description: str = "", conversation_id: str 
     print(f"  - Agent ID: {agent_id}")
     
     try:
-        response = requests.post(create_url, headers=_get_headers(), json=payload)
+        response = requests.post(create_url, json=payload)
         response.raise_for_status()
         print(f"  - ✅ Success: AIP Agent '{agent_id}' created.")
         return response.json()
@@ -292,7 +372,7 @@ def query_aip_agent(agent_id: str, query: str, conversation_id: str = None,
     print(f"  - Query: {query[:100]}...")
     
     try:
-        response = requests.post(query_url, headers=_get_headers(), json=payload)
+        response = requests.post(query_url, json=payload)
         response.raise_for_status()
         result = response.json()
         print(f"  - ✅ Success: Received response from agent.")
@@ -315,7 +395,7 @@ def send_agent_message(from_agent_id: str, to_agent_id: str, action: str, messag
     print(f"  - Action: {action}")
     
     try:
-        response = requests.post(message_url, headers=_get_headers(), json=payload)
+        response = requests.post(message_url, json=payload)
         response.raise_for_status()
         print(f"  - ✅ Success: Message sent.")
         return response.json()
@@ -323,8 +403,18 @@ def send_agent_message(from_agent_id: str, to_agent_id: str, action: str, messag
         print(f"  - ❌ FAILED: Could not send message. Error: {e}")
         return {"error": str(e)}
 
-def buy_agent_auth(buyer_id: str, seller_id: str) -> bool:
-    """Authorizes one agent to access another agent's data."""
+def buy_agent_auth(buyer_id: str, seller_id: str, max_retries: int = 3) -> bool:
+    """Authorizes one agent to access another agent's data with retry logic."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not buyer_id or not seller_id:
+        print(f"  - ❌ FAILED: Both buyer_id and seller_id must be provided")
+        return False
+    if buyer_id == seller_id:
+        print(f"  - ⚠️ SKIPPED: Cannot authorize agent to itself ({buyer_id})")
+        return True  # Not a failure, just unnecessary
+        
     auth_url = f"{API_BASE_URL}/api/v1/agents/buy-auth"
     payload = {
         "buyer_id": buyer_id,
@@ -333,22 +423,63 @@ def buy_agent_auth(buyer_id: str, seller_id: str) -> bool:
     
     print(f"\n--- 🔐 Buying Agent Authorization ---")
     print(f"  - Buyer: {buyer_id} → Seller: {seller_id}")
+    print(f"  - Endpoint: POST {auth_url}")
     
-    try:
-        response = requests.post(auth_url, headers=_get_headers(), json=payload)
-        response.raise_for_status()
-        print(f"  - ✅ Success: Authorization granted.")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(auth_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Authorization granted.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            if hasattr(e, 'response') and e.response is not None:
+                response_text = e.response.text
+                
+                # Parse the actual error from response body
+                try:
+                    error_data = json.loads(response_text)
+                    detail = error_data.get('detail', '')
+                    
+                    # Check if it's an "already authorized" error
+                    if '409' in detail and 'already has authorization' in detail:
+                        print(f"  - ✅ Already authorized: {buyer_id} → {seller_id}")
+                        return True
+                    
+                    # Check for nonce errors
+                    is_nonce_error = (
+                        e.response.status_code == 500 and 
+                        ('nonce too low' in detail.lower() or 'nonce' in detail.lower())
+                    )
+                    
+                    if is_nonce_error and attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 3  # Longer wait for auth: 3s, 6s, 9s
+                        print(f"  - ⚠️ Nonce/blockchain error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        sleep(wait_time)
+                        continue
+                    
+                    # Use the helper to parse error
+                    error_code, error_msg = _parse_error_response(e)
+                    print(f"  - ❌ FAILED ({error_code}): {error_msg}")
+                        
+                except (json.JSONDecodeError, KeyError):
+                    # Fallback to original error display
+                    print(f"  - ❌ FAILED ({e.response.status_code}): {response_text}")
+            else:
+                print(f"  - ❌ FAILED: Could not buy authorization. Error: {e}")
+            
+            return False
+    
+    return False
 
 def check_agent_auth(agent_id: str, target_id: str) -> bool:
     """Checks if an agent has authorization to access another agent's data."""
     check_url = f"{API_BASE_URL}/api/v1/agents/{agent_id}/has-auth/{target_id}"
     
     try:
-        response = requests.get(check_url, headers=_get_headers())
+        response = requests.get(check_url)
         response.raise_for_status()
         result = response.json()
         return result.get("has_auth", False)
@@ -367,7 +498,7 @@ def route_request(request_text: str, top_k: int = 3) -> list:
     print(f"  - Request: {request_text[:100]}...")
     
     try:
-        response = requests.post(route_url, headers=_get_headers(), json=payload)
+        response = requests.post(route_url, json=payload)
         response.raise_for_status()
         result = response.json()
         routes = result.get("routes", [])
