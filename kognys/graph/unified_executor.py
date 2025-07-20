@@ -221,9 +221,8 @@ class UnifiedExecutor:
         if not state:
             return
 
-        # Skip any research_started events from the graph to prevent duplicates
-        # (we already emit one manually at the start)
-        if node_name in ["LangGraph", "research_started"] or "research_started" in str(state):
+        # Skip LangGraph wrapper nodes but allow actual agent nodes
+        if node_name == "LangGraph":
             return
 
         # Map node names to agent names for better frontend display
@@ -376,12 +375,7 @@ class UnifiedExecutor:
                         # Store the count of events before emitting
                         events_before = len(self._recent_events) if self._recent_events else 0
                         
-                        # Skip duplicate research_started events from the graph
-                        if node_name == "LangGraph" and any("research_started" in str(event.get("event_type", "")) 
-                                                           for event in self._recent_events[-3:] if self._recent_events):
-                            print(f"🔄 Skipping duplicate research_started from graph: {node_name}")
-                        else:
-                            self._emit_node_completion_event(node_name, state_update)
+                        self._emit_node_completion_event(node_name, state_update)
                         final_result = state_update # Store the last complete state
                         
                         # Only yield if new events were actually emitted
