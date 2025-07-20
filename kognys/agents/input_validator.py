@@ -1,9 +1,12 @@
 # kognys/agents/input_validator.py
+import uuid
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
+import os
+from kognys.services.membase_client import create_task, join_task
 
 # 1. Define the desired JSON output structure using Pydantic
 class ValidatorResponse(BaseModel):
@@ -27,31 +30,34 @@ _PROMPT = ChatPromptTemplate.from_messages(
 
 def node(state: KognysState) -> dict:
     """
-    Validates the user's question and returns the changes to be merged into the state.
+    Validates the question, creates a unique on-chain task, and joins it.
     """
-
-    # Configure the LLM to *always* return JSON matching our Pydantic model
     _structured_llm = fast_llm.with_structured_output(ValidatorResponse)
-
-    # Construct the chain
     _chain = _PROMPT | _structured_llm
-
-    # Use the chain to get a guaranteed Pydantic object back
     response = _chain.invoke({"question": state.question})
 
     if not response.approved:
         raise ValueError("Question rejected by validator — ask user to rephrase.")
 
-    # 5. Return a dictionary of the state fields to update
+    # Use uuid.uuid4() to generate a truly random and unique ID for every run.
+    unique_id_for_run = str(uuid.uuid4())
+    agent_id = os.getenv("MEMBASE_ID")
+
+    # Create and join the on-chain task
+    if create_task(task_id=unique_id_for_run):
+        join_task(task_id=unique_id_for_run, agent_id=agent_id)
+
     update_dict = {
-        "validated_question": response.revised_question or state.question
+        "validated_question": response.revised_question or state.question,
+        "paper_id": unique_id_for_run,
+        "task_id": unique_id_for_run
     }
     
     update_dict["transcript"] = append_entry(
         state.transcript,
         agent="InputValidator",
-        action="Validated / rewrote question",
-        output=response.revised_question or state.question
+        action="Validated question & created on-chain task",
+        output=f"Task ID: {unique_id_for_run}"
     )
     
     return update_dict

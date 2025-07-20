@@ -10,6 +10,7 @@ class KognysState(BaseModel):
     # --- Input and Core State ---
     question: str
     paper_id: str | None = Field(default=None, description="The unique, content-addressable ID for the final paper.")
+    task_id: str | None = Field(default=None, description="The on-chain task ID for this research job.")
 
     # --- Research and Debate Loop State ---
     validated_question: str | None = Field(

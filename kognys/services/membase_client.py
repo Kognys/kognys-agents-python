@@ -35,6 +35,57 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
         print(f"❌ Failed to register agent '{agent_id}'. Error: {e}")
         return False
 
+def create_task(task_id: str, price: int = 1000) -> bool:
+    """Creates a new task on the blockchain via the Membase API."""
+    task_url = f"{API_BASE_URL}/api/v1/tasks/create"
+    payload = {"task_id": task_id, "price": price}
+    
+    print(f"\n--- ⛓️ Creating On-Chain Task ---")
+    print(f"  - Endpoint: POST {task_url}")
+
+    try:
+        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response.raise_for_status()
+        print(f"  - ✅ Success: Task '{task_id}' created.")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
+        return False
+
+def join_task(task_id: str, agent_id: str) -> bool:
+    """Joins an existing task on the blockchain."""
+    task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/join"
+    payload = {"agent_id": agent_id}
+    
+    print(f"\n--- 🙋 Joining On-Chain Task ---")
+    print(f"  - Endpoint: POST {task_url}")
+    
+    try:
+        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response.raise_for_status()
+        print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
+        return False
+
+def finish_task(task_id: str, agent_id: str) -> bool:
+    """Marks a task as finished on the blockchain."""
+    task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/finish"
+    payload = {"agent_id": agent_id}
+    
+    print(f"\n--- ✅ Finishing On-Chain Task ---")
+    print(f"  - Endpoint: POST {task_url}")
+
+    try:
+        response = requests.post(task_url, headers=_get_headers(), json=payload)
+        response.raise_for_status()
+        print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
+        return False
+
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str) -> bool:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""
     kb_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
