@@ -18,6 +18,8 @@ fast_llm = ChatGoogleGenerativeAI(
     model=FAST_LLM_MODEL,
     google_api_key=GOOGLE_API_KEY,
     temperature=0.1,
+    timeout=60,  # 60 second timeout for API calls
+    max_retries=2  # Retry failed calls up to 2 times
 )
 
 # A more powerful model for complex reasoning and synthesis
@@ -25,6 +27,8 @@ powerful_llm = ChatGoogleGenerativeAI(
     model=POWERFUL_LLM_MODEL,
     google_api_key=GOOGLE_API_KEY,
     temperature=0.7,
+    timeout=120,  # 120 second timeout for complex reasoning
+    max_retries=2  # Retry failed calls up to 2 times
 )
 
 print(f"✅ LLM clients initialized. Fast model: {FAST_LLM_MODEL}, Powerful model: {POWERFUL_LLM_MODEL}")
