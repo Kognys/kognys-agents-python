@@ -4,6 +4,7 @@ import requests
 import json
 import time
 from typing import List, Dict, Any
+from time import sleep
 
 API_BASE_URL = os.getenv("MEMBASE_API_URL")
 API_KEY = os.getenv("MEMBASE_API_KEY")
@@ -55,8 +56,8 @@ def register_agent_if_not_exists(agent_id: str) -> bool:
             print(f"  - Response Body: {e.response.text}")
         return False
 
-def create_task(task_id: str, price: int = 1000) -> bool:
-    """Creates a new task on the blockchain via the Membase API."""
+def create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
+    """Creates a new task on the blockchain via the Membase API with retry logic for nonce errors."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -69,23 +70,38 @@ def create_task(task_id: str, price: int = 1000) -> bool:
     print(f"  - Task ID: {task_id}")
     print(f"  - Price: {price}")
 
-    try:
-        response = requests.post(task_url, json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Task '{task_id}' created.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Task '{task_id}' created.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Could not create task '{task_id}'. Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  - Response Status: {e.response.status_code}")
+                print(f"  - Response Body: {e.response.text}")
+            return False
+    
+    return False
 
-def join_task(task_id: str, agent_id: str) -> bool:
-    """Joins an existing task on the blockchain."""
+def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Joins an existing task on the blockchain with retry logic for nonce errors."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -101,23 +117,38 @@ def join_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
     
-    try:
-        response = requests.post(task_url, json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  - Response Status: {e.response.status_code}")
+                print(f"  - Response Body: {e.response.text}")
+            return False
+    
+    return False
 
-def finish_task(task_id: str, agent_id: str) -> bool:
-    """Marks a task as finished on the blockchain."""
+def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Marks a task as finished on the blockchain with retry logic for nonce errors."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -133,20 +164,35 @@ def finish_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
 
-    try:
-        response = requests.post(task_url, json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            is_nonce_error = (
+                hasattr(e, 'response') and e.response is not None and 
+                e.response.status_code == 500 and 
+                'nonce too low' in str(e.response.text)
+            )
+            
+            if is_nonce_error and attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Could not finish task '{task_id}'. Error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  - Response Status: {e.response.status_code}")
+                print(f"  - Response Body: {e.response.text}")
+            return False
+    
+    return False
 
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> bool:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""
