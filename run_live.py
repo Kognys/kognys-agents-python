@@ -20,9 +20,7 @@ def main():
     print("\n--- AGENT REGISTRATION ---")
     agent_id = os.getenv("MEMBASE_ID", "kognys-research-agent-001")
     is_registered = register_agent_if_not_exists(
-        agent_id=agent_id,
-        name="Kognys Research Agent",
-        description="An autonomous agent that performs research using a Chain-of-Debate framework."
+        agent_id=agent_id
     )
 
     if not is_registered:
