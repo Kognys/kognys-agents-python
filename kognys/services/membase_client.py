@@ -64,8 +64,8 @@ def create_task(task_id: str, price: int = 1000) -> bool:
             print(f"  - Response Body: {e.response.text}")
         return False
 
-def join_task(task_id: str, agent_id: str) -> bool:
-    """Joins an existing task on the blockchain."""
+def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Joins an existing task on the blockchain with retry logic for race conditions."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
         return False
@@ -81,20 +81,38 @@ def join_task(task_id: str, agent_id: str) -> bool:
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
     
-    try:
-        response = requests.post(task_url, headers=_get_headers(), json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        tx_hash = response_data.get('transaction_hash', 'N/A')
-        print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
-        print(f"  - 🔗 Transaction Hash: {tx_hash}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"  - Response Status: {e.response.status_code}")
-            print(f"  - Response Body: {e.response.text}")
-        return False
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(task_url, headers=_get_headers(), json=payload)
+            response.raise_for_status()
+            response_data = response.json()
+            tx_hash = response_data.get('transaction_hash', 'N/A')
+            print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
+            print(f"  - 🔗 Transaction Hash: {tx_hash}")
+            return True
+        except requests.exceptions.RequestException as e:
+            # Check if this is a 404 "task does not exist" error that might be resolved with retry
+            is_retry_worthy = (
+                hasattr(e, 'response') and 
+                e.response is not None and 
+                (e.response.status_code == 404 or e.response.status_code == 500) and
+                "does not exist" in e.response.text
+            )
+            
+            if is_retry_worthy and attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"  - ⏳ Retry {attempt + 1}/{max_retries}: Task not found, waiting {wait_time}s for sync...")
+                time.sleep(wait_time)
+                continue
+            else:
+                # Final attempt or non-retryable error
+                print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'. Error: {e}")
+                if hasattr(e, 'response') and e.response is not None:
+                    print(f"  - Response Status: {e.response.status_code}")
+                    print(f"  - Response Body: {e.response.text}")
+                return False
+    
+    return False
 
 def finish_task(task_id: str, agent_id: str) -> bool:
     """Marks a task as finished on the blockchain."""

@@ -2,8 +2,11 @@
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import powerful_llm
+import os
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
+from kognys.services.membase_client import query_aip_agent
+from typing import AsyncGenerator
 
 class OrchestratorResponse(BaseModel):
     decision: str = Field(description="The next action. Must be one of: 'REVISE', 'RESEARCH_AGAIN', or 'FINALIZE'.")
@@ -34,40 +37,80 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-def node(state: KognysState) -> dict:
+async def node(state: KognysState) -> AsyncGenerator[dict, None]:
     print("---ORCHESTRATOR: Moderating the debate and deciding next step...---")
     _structured_llm = powerful_llm.with_structured_output(OrchestratorResponse)
     _chain = _PROMPT | _structured_llm
 
     # Handle the case where retrieval fails and we come here directly
     if state.retrieval_status == "No documents found":
-        update_dict = {"final_answer": "I am sorry, but I could not find any relevant information to answer your question."}
-    else:
-        documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])
-        criticisms_str = "\n".join(state.criticisms) if state.criticisms else "None"
-        
-        response = _chain.invoke({
-            "revisions": state.revisions,
-            "question": state.validated_question,
-            "documents": documents_str,
-            "answer": state.draft_answer,
-            "criticisms": criticisms_str
-        })
-        
-        print(f"---ORCHESTRATOR DECISION: {response.decision} ---\nReason: {response.explanation}")
+        final_state = {
+            "final_answer": "I am sorry, but I could not find any relevant information to answer your question.",
+            "transcript": append_entry(
+                state.transcript,
+                agent="Orchestrator",
+                action="Made decision",
+                output="No documents found"
+            )
+        }
+        yield final_state
+        return
+    
+    documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])
+    criticisms_str = "\n".join(state.criticisms) if state.criticisms else "None"
+    
+    # Get the complete decision first
+    response = await _chain.ainvoke({
+        "revisions": state.revisions,
+        "question": state.validated_question,
+        "documents": documents_str,
+        "answer": state.draft_answer,
+        "criticisms": criticisms_str
+    })
+    
+    print(f"---ORCHESTRATOR DECISION: {response.decision} ---\nReason: {response.explanation}")
 
-        if response.decision == "RESEARCH_AGAIN":
-            update_dict = { "validated_question": response.next_query, "documents": [], "revisions": state.revisions + 1 }
-        elif response.decision == "FINALIZE":
-            update_dict = {"final_answer": response.final_answer}
-        else: # REVISE
-            update_dict = {"revisions": state.revisions + 1}
-    
-    update_dict["transcript"] = append_entry(
-        state.transcript,
-        agent="Orchestrator",
-        action="Made decision",
-        output=response.decision if 'response' in locals() else "No documents found"
-    )
-    
-    return update_dict
+    if response.decision == "RESEARCH_AGAIN":
+        final_state = {
+            "validated_question": response.next_query, 
+            "documents": [], 
+            "revisions": state.revisions + 1,
+            "transcript": append_entry(
+                state.transcript,
+                agent="Orchestrator",
+                action="Made decision",
+                output=response.decision
+            )
+        }
+        yield final_state
+        
+    elif response.decision == "FINALIZE":
+        # Stream the final answer token by token for UI
+        full_final_answer = ""
+        async for token in powerful_llm.astream(response.final_answer):
+             yield {"final_answer_token": token.content}
+             full_final_answer += token.content
+        
+        # Yield the complete final state
+        final_state = {
+            "final_answer": full_final_answer,
+            "transcript": append_entry(
+                state.transcript,
+                agent="Orchestrator",
+                action="Made decision",
+                output=response.decision
+            )
+        }
+        yield final_state
+        
+    else:  # REVISE
+        final_state = {
+            "revisions": state.revisions + 1,
+            "transcript": append_entry(
+                state.transcript,
+                agent="Orchestrator",
+                action="Made decision",
+                output=response.decision
+            )
+        }
+        yield final_state

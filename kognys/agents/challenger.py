@@ -3,6 +3,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
+from kognys.services.membase_client import query_aip_agent
+from typing import AsyncGenerator
+from pydantic import BaseModel
 
 _PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -16,35 +19,34 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-def node(state: KognysState) -> dict:
-    """
-    Generates criticisms for the draft answer.
-    """
-    # Configure the LLM to *always* return JSON matching our Pydantic model
-    _chain = _PROMPT | fast_llm
+class Criticisms(BaseModel):
+    criticisms: list[str]
 
-    response = _chain.invoke({
+async def node(state: KognysState) -> AsyncGenerator[dict, None]:
+    print("---CHALLENGER: Reviewing the draft for weaknesses...---")
+    _structured_llm = fast_llm.with_structured_output(Criticisms)
+    _chain = _PROMPT | _structured_llm
+
+    # Get the complete structured response first
+    response = await _chain.ainvoke({
         "question": state.validated_question,
         "answer": state.draft_answer
     })
     
-    # Handle both string and list content types
-    if isinstance(response.content, list):
-        content = " ".join(str(item) for item in response.content) if response.content else ""
-    else:
-        content = str(response.content)
+    # Stream each criticism as a token for UI feedback
+    for criticism in response.criticisms:
+        yield {"criticism_token": criticism}
+
+    # CRITICAL: Only yield the final, complete state once at the end
+    # This ensures the orchestrator sees the complete list of criticisms
+    final_state = {
+        "criticisms": response.criticisms,
+        "transcript": append_entry(
+            state.transcript,
+            agent="Challenger",
+            action="Generated criticisms",
+            output="\n".join(response.criticisms)
+        )
+    }
     
-    # Simple parsing for now, can be improved with structured output
-    criticisms = [c.strip() for c in content.split('*') if c.strip()]
-    
-    update_dict = {"criticisms": criticisms}
-    
-    update_dict["transcript"] = append_entry(
-        state.transcript,
-        agent="Challenger",
-        action="Provided criticisms",
-        details=f"{len(criticisms)} criticism(s)",
-        output=criticisms[:2]
-    )
-    
-    return update_dict
+    yield final_state

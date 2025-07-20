@@ -4,6 +4,7 @@ from kognys.config import powerful_llm, ENABLE_AIP_AGENTS, AIP_SYNTHESIZER_ID, A
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
 from kognys.services.membase_client import query_aip_agent, send_agent_message
+from typing import AsyncGenerator
 
 _PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -22,73 +23,35 @@ _PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-def node(state: KognysState) -> dict:
+async def node(state: KognysState) -> AsyncGenerator[dict, None]:
     print("---SYNTHESIZER: Writing/Revising draft...---")
     _chain = _PROMPT | powerful_llm
 
     documents_str = "\n\n".join([doc.get('content', '') for doc in state.documents])
     criticisms_str = "\n".join(state.criticisms) if state.criticisms else "None"
 
-    response = _chain.invoke({
+    # Stream the response token by token asynchronously for UI
+    full_response = ""
+    async for token in _chain.astream({
         "question": state.validated_question,
         "documents": documents_str,
         "criticisms": criticisms_str
-    })
-    
-    # Handle both string and list content types
-    if isinstance(response.content, list):
-        # If content is a list, join it or take the first element
-        draft_answer = " ".join(str(item) for item in response.content) if response.content else ""
-    else:
-        draft_answer = str(response.content)
-    
-    # If AIP is enabled, get additional insights from AIP synthesizer
-    if ENABLE_AIP_AGENTS:
-        try:
-            aip_prompt = f"""Research Question: {state.validated_question}
+    }):
+        # Yield each token as a partial update for streaming UI
+        yield {"draft_answer_token": token.content}
+        full_response += token.content
 
-Draft Answer (version {state.revisions + 1}):
-{draft_answer[:1500]}{'...' if len(draft_answer) > 1500 else ''}
-
-Please provide:
-1. Key insights that might strengthen this answer
-2. Important connections between the sources
-3. Suggestions for clarity and coherence
-
-Previous criticisms addressed: {criticisms_str}"""
-            
-            aip_response = query_aip_agent(
-                agent_id=AIP_SYNTHESIZER_ID,
-                query=aip_prompt,
-                conversation_id=f"research-{state.paper_id}"
-            )
-            
-            if aip_response.get("response"):
-                print("---SYNTHESIZER: AIP agent provided enhancement suggestions---")
-                # Could integrate suggestions into the draft or store for challenger
-                
-                # Optionally notify challenger about the synthesis
-                if state.revisions > 0:
-                    send_agent_message(
-                        from_agent_id=AIP_SYNTHESIZER_ID,
-                        to_agent_id=AIP_CHALLENGER_ID,
-                        action="inform",
-                        message=f"Synthesized revision {state.revisions + 1} addressing criticisms"
-                    )
-                    
-        except Exception as e:
-            print(f"---SYNTHESIZER: AIP enhancement failed: {e}, continuing with standard synthesis---")
+    # CRITICAL: Only yield the final, complete state once at the end
+    # This ensures the orchestrator sees the complete draft for decision-making
+    final_state = {
+        "draft_answer": full_response, 
+        "criticisms": [],  # Reset criticisms when new draft is created
+        "transcript": append_entry(
+            state.transcript,
+            agent="Synthesizer",
+            action=f"Drafted answer v{state.revisions+1}",
+            output=hash(full_response)
+        )
+    }
     
-    update_dict = {"draft_answer": draft_answer, "criticisms": []}
-    
-    # Create a safe hash from the draft answer string
-    content_hash = hash(draft_answer) if draft_answer else 0
-    
-    update_dict["transcript"] = append_entry(
-        state.transcript,
-        agent="Synthesizer",
-        action=f"Drafted answer v{state.revisions+1}",
-        output=content_hash
-    )
-    
-    return update_dict
+    yield final_state

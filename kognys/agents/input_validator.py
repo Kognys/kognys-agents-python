@@ -57,8 +57,13 @@ def node(state: KognysState) -> dict:
     agent_id = os.getenv("MEMBASE_ID")
 
     # Create and join the on-chain task
-    if create_task(task_id=unique_id_for_run):
-        join_task(task_id=unique_id_for_run, agent_id=agent_id)
+    task_created = create_task(task_id=unique_id_for_run)
+    if task_created:
+        task_joined = join_task(task_id=unique_id_for_run, agent_id=agent_id)
+        if not task_joined:
+            print(f"  - ⚠️  WARNING: Task created but joining failed. Continuing with research...")
+    else:
+        print(f"  - ⚠️  WARNING: Task creation failed. Continuing with research...")
 
     update_dict = {
         "validated_question": response.revised_question or state.question,
