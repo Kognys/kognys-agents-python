@@ -221,6 +221,11 @@ class UnifiedExecutor:
         if not state:
             return
 
+        # Skip any research_started events from the graph to prevent duplicates
+        # (we already emit one manually at the start)
+        if node_name in ["LangGraph", "research_started"] or "research_started" in str(state):
+            return
+
         # Map node names to agent names for better frontend display
         agent_name = node_name.replace("_", " ").title()
         
@@ -282,8 +287,21 @@ class UnifiedExecutor:
         
         print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
         
-        # Initialize event tracking (don't emit start event manually - let the graph do it)
+        # Emit start event
+        self._emit_event("research_started", {
+            "question": initial_state.question,
+            "task_id": config.get("configurable", {}).get("thread_id"),
+            "status": "Starting research process..."
+        }, agent="system")
+        
+        # Yield the start event and initialize tracking
         events_yielded = set()
+        with self._events_lock:
+            if self._recent_events:
+                latest = self._recent_events[-1]
+                content_hash = hash(json.dumps(latest, sort_keys=True))
+                events_yielded.add(content_hash)
+                yield latest
         
         try:
             print(f"📝 Executing graph with async streaming...")
@@ -358,7 +376,12 @@ class UnifiedExecutor:
                         # Store the count of events before emitting
                         events_before = len(self._recent_events) if self._recent_events else 0
                         
-                        self._emit_node_completion_event(node_name, state_update)
+                        # Skip duplicate research_started events from the graph
+                        if node_name == "LangGraph" and any("research_started" in str(event.get("event_type", "")) 
+                                                           for event in self._recent_events[-3:] if self._recent_events):
+                            print(f"🔄 Skipping duplicate research_started from graph: {node_name}")
+                        else:
+                            self._emit_node_completion_event(node_name, state_update)
                         final_result = state_update # Store the last complete state
                         
                         # Only yield if new events were actually emitted
