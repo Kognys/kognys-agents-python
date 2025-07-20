@@ -62,10 +62,6 @@ def node(state: KognysState) -> dict:
     # Create and join the on-chain task with enhanced error handling
     task_created = create_task(task_id=unique_id_for_run)
     if task_created:
-        # Add small delay to ensure task is created on blockchain
-        import time
-        time.sleep(1)
-        
         task_joined = join_task(task_id=unique_id_for_run, agent_id=agent_id)
         if not task_joined:
             print(f"  - ⚠️  WARNING: Task created but joining failed. Continuing with research...")
