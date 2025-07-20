@@ -38,8 +38,14 @@ def node(state: KognysState) -> dict:
         "criticisms": criticisms_str
     })
     
+    # Handle both string and list content types
+    if isinstance(response.content, list):
+        content = " ".join(str(item) for item in response.content) if response.content else ""
+    else:
+        content = str(response.content)
+    
     # The response should now be a clean query string
-    new_query = response.content.strip().strip('"') # Added .strip('"') for safety
+    new_query = content.strip().strip('"') # Added .strip('"') for safety
     
     print(f"---REVISER AGENT--- \nNew Search Query: {new_query}\n")
     return {"validated_question": new_query, "documents": []}

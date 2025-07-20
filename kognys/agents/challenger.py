@@ -28,8 +28,14 @@ def node(state: KognysState) -> dict:
         "answer": state.draft_answer
     })
     
+    # Handle both string and list content types
+    if isinstance(response.content, list):
+        content = " ".join(str(item) for item in response.content) if response.content else ""
+    else:
+        content = str(response.content)
+    
     # Simple parsing for now, can be improved with structured output
-    criticisms = [c.strip() for c in response.content.split('*') if c.strip()]
+    criticisms = [c.strip() for c in content.split('*') if c.strip()]
     
     update_dict = {"criticisms": criticisms}
     

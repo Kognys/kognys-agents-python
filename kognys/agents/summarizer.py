@@ -41,4 +41,10 @@ def node(state: KognysState) -> dict:
         "criticisms": criticisms_str
     })
     
-    return {"context_summary": response.content}
+    # Handle both string and list content types
+    if isinstance(response.content, list):
+        content = " ".join(str(item) for item in response.content) if response.content else ""
+    else:
+        content = str(response.content)
+    
+    return {"context_summary": content}

@@ -34,13 +34,23 @@ def node(state: KognysState) -> dict:
         "criticisms": criticisms_str
     })
     
-    update_dict = {"draft_answer": response.content, "criticisms": []}
+    # Handle both string and list content types
+    if isinstance(response.content, list):
+        # If content is a list, join it or take the first element
+        content = " ".join(str(item) for item in response.content) if response.content else ""
+    else:
+        content = str(response.content)
+    
+    update_dict = {"draft_answer": content, "criticisms": []}
+    
+    # Create a safe hash from the content string
+    content_hash = hash(content) if content else 0
     
     update_dict["transcript"] = append_entry(
         state.transcript,
         agent="Synthesizer",
         action=f"Drafted answer v{state.revisions+1}",
-        output=hash(response.content)
+        output=content_hash
     )
     
     return update_dict
