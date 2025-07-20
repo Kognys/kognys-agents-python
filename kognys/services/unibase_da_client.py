@@ -4,6 +4,7 @@ import requests
 import json
 import time
 from typing import List, Dict, Any
+from kognys.utils.address import normalize_address
 
 DA_SERVICE_URL = os.getenv("DA_SERVICE_URL")
 API_KEY = os.getenv("MEMBASE_API_KEY") 
@@ -38,7 +39,9 @@ def archive_research_packet(
     
     # Add user_id to payload if provided
     if user_id:
-        payload["user_id"] = user_id
+        # Normalize user_id to lowercase if it's an Ethereum address
+        normalized_user_id = normalize_address(user_id) or user_id
+        payload["user_id"] = normalized_user_id
 
     start_time = time.time()
     payload_size = len(json.dumps(payload).encode('utf-8'))

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # tests/test_local_api_debug.py
 import requests
 import json
@@ -16,7 +17,7 @@ def test_local_api():
     
     payload = {
         "message": "give me a research about tests in animals",
-        "user_id": "0x6604Ef12FB993B31aeaAE18E925b6726e0a3678B"
+        "user_id": "0x6604ef12fb993b31aeaae18e925b6726e0a3678b"
     }
     
     headers = {

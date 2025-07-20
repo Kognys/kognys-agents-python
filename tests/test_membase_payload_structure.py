@@ -124,7 +124,7 @@ class TestMembasePayloadStructure:
             paper_id="abc123",
             paper_content="Machine learning is a subset of AI...",
             original_question="What is ML?",
-            user_id="0x6604Ef12FB993B31aeaAE18E925b6726e0a3678B"
+            user_id="0x6604ef12fb993b31aeaae18e925b6726e0a3678b"
         )
         
         # Assert - Check exact format matches partner's example
@@ -136,7 +136,7 @@ class TestMembasePayloadStructure:
                 "metadata": {
                     "paper_id": "abc123",
                     "original_question": "What is ML?",
-                    "user_id": "0x6604Ef12FB993B31aeaAE18E925b6726e0a3678B"
+                    "user_id": "0x6604ef12fb993b31aeaae18e925b6726e0a3678b"
                 }
             },
             "strict": True

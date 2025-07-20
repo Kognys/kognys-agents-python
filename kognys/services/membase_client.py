@@ -5,6 +5,7 @@ import json
 import time
 from typing import List, Dict, Any
 from time import sleep
+from kognys.utils.address import normalize_address
 
 API_BASE_URL = os.getenv("MEMBASE_API_URL")
 API_KEY = os.getenv("MEMBASE_API_KEY")
@@ -254,7 +255,9 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     kb_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
     metadata = {"paper_id": paper_id, "original_question": original_question}
     if user_id:
-        metadata["user_id"] = user_id
+        # Normalize user_id to lowercase if it's an Ethereum address
+        normalized_user_id = normalize_address(user_id) or user_id
+        metadata["user_id"] = normalized_user_id
     document = {"content": paper_content, "metadata": metadata}
     payload = {"documents": document, "strict": True}
     
@@ -332,12 +335,15 @@ def get_paper_from_kb(paper_id: str) -> dict | None:
 
 def get_papers_by_user_id(user_id: str, top_k: int = 10) -> list:
     """Retrieves all papers from the Membase Knowledge Base for a specific user."""
+    # Normalize user_id to lowercase if it's an Ethereum address
+    normalized_user_id = normalize_address(user_id) or user_id
+    
     search_url = f"{API_BASE_URL}/api/v1/knowledge/documents/search"
-    metadata_filter = json.dumps({"user_id": user_id})
+    metadata_filter = json.dumps({"user_id": normalized_user_id})
     # Use empty query to get all papers for the user
     params = {"query": "", "metadata_filter": metadata_filter, "top_k": top_k}
     try:
-        print(f"--- MEMBASE CLIENT: Searching for papers by user '{user_id}' in KB... ---")
+        print(f"--- MEMBASE CLIENT: Searching for papers by user '{normalized_user_id}' in KB... ---")
         response = requests.get(search_url, params=params, timeout=30)
         response.raise_for_status()
         results = response.json().get("results", [])
@@ -349,9 +355,9 @@ def get_papers_by_user_id(user_id: str, top_k: int = 10) -> list:
                 "paper_id": metadata.get("paper_id", ""),
                 "original_question": metadata.get("original_question", ""),
                 "content": document.get("content", ""),
-                "user_id": metadata.get("user_id", user_id)
+                "user_id": metadata.get("user_id", normalized_user_id)
             })
-        print(f"--- MEMBASE CLIENT: Found {len(papers)} papers for user '{user_id}' ---")
+        print(f"--- MEMBASE CLIENT: Found {len(papers)} papers for user '{normalized_user_id}' ---")
         return papers
     except requests.exceptions.RequestException as e:
         print(f"--- MEMBASE CLIENT: Error searching for papers by user: {e} ---")
