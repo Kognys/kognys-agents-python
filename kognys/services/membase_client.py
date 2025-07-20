@@ -256,7 +256,7 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     if user_id:
         metadata["user_id"] = user_id
     document = {"content": paper_content, "metadata": metadata}
-    payload = {"documents": [document]}
+    payload = {"documents": document, "strict": True}
     
     start_time = time.time()
     payload_size = len(json.dumps(payload).encode('utf-8'))
@@ -264,6 +264,8 @@ def store_final_answer_in_kb(paper_id: str, paper_content: str, original_questio
     print(f"\n--- 📤 Storing Final Answer in Membase KB ---")
     print(f"  - Endpoint: POST {kb_url}")
     print(f"  - Data Size: {payload_size / 1024:.2f} KB")
+    print(f"  - User ID in metadata: {metadata.get('user_id', 'None')}")
+    print(f"  - Payload structure: documents={'content': '...', 'metadata': {metadata}}")
 
     try:
         response = requests.post(kb_url, json=payload)
