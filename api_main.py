@@ -93,44 +93,63 @@ class LogEvent(BaseModel):
     agent: str
 
 async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
-    """Generate Server-Sent Events stream for the research process."""
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    initial_state = KognysState(question=question, user_id=user_id)
+    """Generate Server-Sent Events stream for the research process with a heartbeat."""
     
-    # Store final result and paper ID
-    final_result = None
-    paper_id = None
+    queue = asyncio.Queue()
     
-    # Use the unified executor
-    async for event in unified_executor.execute_streaming(initial_state, config):
-        # Add paper_id to event data if we have one
-        if paper_id:
-            event["data"]["paper_id"] = paper_id
+    async def stream_executor():
+        """Task to run the graph and put events into the queue."""
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        initial_state = KognysState(question=question, user_id=user_id)
         
-        # Check if this is the research_completed event to capture final result
-        if event.get("event_type") == "research_completed" and event.get("data", {}).get("final_answer"):
-            final_result = event["data"]["final_answer"]
-            paper_id = generate_paper_id(question, final_result)
-            event["data"]["paper_id"] = paper_id
-        
-        # Format as SSE with proper JSON serialization
-        sse_data = f"data: {json.dumps(event)}\n\n"
-        yield sse_data
-    
-    # Send final paper summary if we have a result
-    if final_result and paper_id:
-        final_event = {
-            "event_type": "paper_generated",
-            "data": {
-                "paper_id": paper_id,
-                "paper_content": final_result,
-                "message": "Research paper successfully generated",
-                "status": "completed"
-            },
-            "timestamp": time.time()
-        }
-        sse_data = f"data: {json.dumps(final_event)}\n\n"
-        yield sse_data
+        try:
+            async for event in unified_executor.execute_streaming(initial_state, config):
+                await queue.put(event)
+        except Exception as e:
+            # Put the exception in the queue to be handled by the main generator
+            await queue.put(e)
+        finally:
+            # Signal completion
+            await queue.put(None)
+
+    async def heartbeat():
+        """Task to send a heartbeat event every 15 seconds."""
+        while True:
+            try:
+                await asyncio.sleep(15)
+                heartbeat_event = {
+                    "event_type": "heartbeat",
+                    "data": {"status": "alive", "timestamp": time.time()},
+                    "agent": "system"
+                }
+                await queue.put(heartbeat_event)
+            except asyncio.CancelledError:
+                break
+
+    executor_task = asyncio.create_task(stream_executor())
+    heartbeat_task = asyncio.create_task(heartbeat())
+
+    try:
+        while True:
+            # Wait for an item from either task
+            item = await queue.get()
+            
+            if item is None: # End of executor stream
+                break
+            
+            if isinstance(item, Exception):
+                # If the executor had an error, re-raise it
+                raise item
+
+            # Format and yield the event as SSE
+            sse_data = f"data: {json.dumps(item)}\n\n"
+            yield sse_data
+
+    finally:
+        # Clean up tasks
+        executor_task.cancel()
+        heartbeat_task.cancel()
+        await asyncio.gather(executor_task, heartbeat_task, return_exceptions=True)
 
 # API Endpoints
 
