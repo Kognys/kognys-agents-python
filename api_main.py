@@ -151,6 +151,56 @@ async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str
         heartbeat_task.cancel()
         await asyncio.gather(executor_task, heartbeat_task, return_exceptions=True)
 
+async def generate_execute_and_log_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
+    """
+    Starts a research task and streams the live global log of all events.
+    """
+    event_queue = asyncio.Queue()
+
+    # 1. Define a callback that puts events into our queue
+    def stream_callback(event: Dict[str, Any]):
+        try:
+            event_queue.put_nowait(event)
+        except asyncio.QueueFull:
+            print("Log stream queue is full, dropping an event.")
+
+    # 2. Add the callback to the executor's global listeners
+    unified_executor.add_event_callback(stream_callback)
+
+    # 3. Create a background task to run the research
+    #    We don't need to consume its output here, as we'll get the events via the callback
+    async def run_graph_in_background():
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        initial_state = KognysState(question=question, user_id=user_id)
+        try:
+            # We use a non-streaming execution here just to run the process
+            await unified_executor.execute_async(initial_state, config)
+        except Exception as e:
+            print(f"Error in background research task: {e}")
+            # You could optionally put an error event into the queue here
+        finally:
+            # Signal completion by putting a sentinel value in the queue
+            await event_queue.put(None)
+
+    exec_task = asyncio.create_task(run_graph_in_background())
+
+    try:
+        # 4. Main loop to yield events from the queue
+        while True:
+            event = await event_queue.get()
+            if event is None:  # Sentinel value means the background task is done
+                break
+            
+            sse_data = f"data: {json.dumps(event)}\n\n"
+            yield sse_data
+    finally:
+        # 5. Clean up the task and callback
+        exec_task.cancel()
+        unified_executor.event_callbacks.remove(stream_callback)
+        await asyncio.gather(exec_task, return_exceptions=True)
+        print("--- ✅ Cleaned up execute-and-monitor stream ---")
+
+
 # API Endpoints
 
 @app.get("/", summary="Health Check")
@@ -306,5 +356,24 @@ async def stream_system_logs():
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
+
+app.post("/research/execute-and-monitor")
+async def execute_and_monitor_paper_stream(request: CreatePaperRequest):
+    """
+    Initiates a new research task and streams the comprehensive real-time log
+    of all server events for monitoring.
+    """
+    normalized_user_id = normalize_address(request.user_id) or request.user_id
+    print(f"Received execute-and-monitor request from user '{normalized_user_id}' for: '{request.message}'")
+    
+    return StreamingResponse(
+        generate_execute_and_log_stream(request.message, normalized_user_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
         }
     )
