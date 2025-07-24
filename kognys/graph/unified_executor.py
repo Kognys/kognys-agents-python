@@ -78,9 +78,8 @@ class UnifiedExecutor:
             }
     
     def _emit_event(self, event_type: str, data: Dict[str, Any], agent: str = None):
-        """Emit an event to all registered callbacks, preventing immediate duplicates."""
+        """Emit an event to all registered callbacks, preventing immediate duplicates for non-token events."""
         
-        # Create the potential new event
         event = {
             "event_type": event_type,
             "data": data.copy(),
@@ -89,12 +88,13 @@ class UnifiedExecutor:
         }
 
         with self._events_lock:
-            # Check if the last event is identical to this one
-            if self._recent_events:
-                last_event = self._recent_events[-1]
-                if last_event["event_type"] == event_type and last_event["agent"] == agent:
-                    print(f"🤫 Skipping immediate duplicate event emission for: {event_type}")
-                    return # Do not emit or store the duplicate event
+            # FIX: Only check for duplicates on non-token events
+            if not event_type.endswith("_token"):
+                if self._recent_events:
+                    last_event = self._recent_events[-1]
+                    if last_event["event_type"] == event_type and last_event["agent"] == agent:
+                        print(f"🤫 Skipping immediate duplicate event emission for: {event_type}")
+                        return
 
             print(f"📡 UnifiedExecutor emitting: {event_type}")
             
@@ -105,11 +105,11 @@ class UnifiedExecutor:
             if len(self._recent_events) > self._max_events:
                 self._recent_events.pop(0)
         
+        # This part remains the same, but I'm including it for completeness
         if not self._stop_event.is_set():
             for callback in self.event_callbacks:
                 try:
-                    # Pass the full event object to the callback
-                    callback(event) 
+                    callback(event)
                 except Exception as e:
                     print(f"Error in event callback: {e}")
     
