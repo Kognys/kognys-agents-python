@@ -204,14 +204,14 @@ def join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
     
     return False
 
-def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
-    """Marks a task as finished on the blockchain with retry logic for nonce errors."""
+def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> dict:
+    """Marks a task as finished on the blockchain and returns the transaction hash."""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
-        return False
+        return {"success": False, "transaction_hash": None}
     if not agent_id:
         print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
-        return False
+        return {"success": False, "transaction_hash": None}
         
     task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/finish"
     payload = {"agent_id": agent_id}
@@ -229,7 +229,7 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
             tx_hash = response_data.get('transaction_hash', 'N/A')
             print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
             print(f"  - 🔗 Transaction Hash: {tx_hash}")
-            return True
+            return {"success": True, "transaction_hash": tx_hash}
         except requests.exceptions.RequestException as e:
             is_nonce_error = (
                 hasattr(e, 'response') and e.response is not None and 
@@ -238,7 +238,7 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
             )
             
             if is_nonce_error and attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                wait_time = (attempt + 1) * 2
                 print(f"  - ⚠️ Nonce error detected. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
                 sleep(wait_time)
                 continue
@@ -246,9 +246,9 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
             error_code, error_msg = _parse_error_response(e)
             print(f"  - ❌ FAILED ({error_code}): Could not finish task '{task_id}'")
             print(f"     Error: {error_msg}")
-            return False
+            return {"success": False, "transaction_hash": None}
     
-    return False
+    return {"success": False, "transaction_hash": None}
 
 def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> bool:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""

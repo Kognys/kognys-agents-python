@@ -230,29 +230,21 @@ class UnifiedExecutor:
         if not state:
             return
 
-        # Allow all events through for presentation
-
-        # Map node names to agent names for better frontend display
-        agent_name = node_name.replace("_", " ").title()
-        
         if node_name == "input_validator" and state.get("validated_question"):
             self._emit_event("question_validated", {
                 "validated_question": state["validated_question"],
                 "status": "Question validated and refined"
             }, agent="input_validator")
-        elif node_name == "retriever" and state.get("documents"):
-            # Extract document details for rich frontend display
-            documents_list = []
-            for doc in state["documents"]:
-                documents_list.append({
-                    "title": doc.get("title", "No Title Available"),
-                    "url": doc.get("url", "No URL Available")
-                })
-            
+        elif node_name == "retriever" and "documents" in state:
+            documents = state.get("documents", [])
+            document_details = [
+                {"title": doc.get("title", "No Title"), "url": doc.get("url", "No URL")}
+                for doc in documents
+            ]
             self._emit_event("documents_retrieved", {
-                "document_count": len(state["documents"]),
-                "documents": documents_list,
-                "status": f"Retrieved {len(state['documents'])} relevant documents"
+                "document_count": len(documents),
+                "status": f"Retrieved {len(documents)} relevant documents",
+                "documents": document_details
             }, agent="retriever")
         elif node_name == "synthesizer" and state.get("draft_answer"):
             self._emit_event("draft_generated", {
@@ -279,7 +271,8 @@ class UnifiedExecutor:
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
                 "final_answer": state["final_answer"],
-                "status": "Research completed successfully"
+                "status": "Research completed successfully",
+                "verifiable_data": state.get("verifiable_data", {}) # Include the on-chain data
             }, agent="publisher")
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
