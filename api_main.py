@@ -154,6 +154,7 @@ async def generate_sse_stream(question: str, user_id: str) -> AsyncGenerator[str
 async def generate_execute_and_log_stream(question: str, user_id: str) -> AsyncGenerator[str, None]:
     """
     Starts a research task and streams the live global log of all events.
+    This is a corrected version that avoids asyncio loop conflicts.
     """
     event_queue = asyncio.Queue()
 
@@ -162,22 +163,23 @@ async def generate_execute_and_log_stream(question: str, user_id: str) -> AsyncG
         try:
             event_queue.put_nowait(event)
         except asyncio.QueueFull:
-            print("Log stream queue is full, dropping an event.")
+            print("Log stream queue is full, dropping a log event.")
 
     # 2. Add the callback to the executor's global listeners
     unified_executor.add_event_callback(stream_callback)
 
-    # 3. Create a background task to run the research
-    #    We don't need to consume its output here, as we'll get the events via the callback
+    # 3. Create a background task to run the research using the reliable streaming method
     async def run_graph_in_background():
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         initial_state = KognysState(question=question, user_id=user_id)
         try:
-            # We use a non-streaming execution here just to run the process
-            await unified_executor.execute_async(initial_state, config)
+            # Use the known-working execute_streaming and simply consume it.
+            # The callback will push the real events to our queue for the client.
+            async for _ in unified_executor.execute_streaming(initial_state, config):
+                pass
         except Exception as e:
             print(f"Error in background research task: {e}")
-            # You could optionally put an error event into the queue here
+            await event_queue.put(e)
         finally:
             # Signal completion by putting a sentinel value in the queue
             await event_queue.put(None)
@@ -187,16 +189,28 @@ async def generate_execute_and_log_stream(question: str, user_id: str) -> AsyncG
     try:
         # 4. Main loop to yield events from the queue
         while True:
-            event = await event_queue.get()
-            if event is None:  # Sentinel value means the background task is done
+            item = await event_queue.get()
+            if item is None:  # Sentinel value means the background task is done
                 break
             
-            sse_data = f"data: {json.dumps(event)}\n\n"
+            if isinstance(item, Exception):
+                # If the executor had an error, create a serializable error event
+                error_event = {
+                    "event_type": "error",
+                    "data": {"error": str(item), "status": "An error occurred during research"},
+                    "agent": "system",
+                    "timestamp": time.time()
+                }
+                sse_data = f"data: {json.dumps(error_event)}\n\n"
+            else:
+                sse_data = f"data: {json.dumps(item)}\n\n"
+            
             yield sse_data
     finally:
         # 5. Clean up the task and callback
         exec_task.cancel()
-        unified_executor.event_callbacks.remove(stream_callback)
+        if stream_callback in unified_executor.event_callbacks:
+            unified_executor.event_callbacks.remove(stream_callback)
         await asyncio.gather(exec_task, return_exceptions=True)
         print("--- ✅ Cleaned up execute-and-monitor stream ---")
 
