@@ -359,7 +359,7 @@ async def stream_system_logs():
         }
     )
 
-app.post("/research/execute-and-monitor")
+@app.post("/research/execute-and-monitor")
 async def execute_and_monitor_paper_stream(request: CreatePaperRequest):
     """
     Initiates a new research task and streams the comprehensive real-time log
