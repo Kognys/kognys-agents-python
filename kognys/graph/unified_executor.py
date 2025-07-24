@@ -241,8 +241,17 @@ class UnifiedExecutor:
                 "status": "Question validated and refined"
             }, agent="input_validator")
         elif node_name == "retriever" and state.get("documents"):
+            # Extract document details for rich frontend display
+            documents_list = []
+            for doc in state["documents"]:
+                documents_list.append({
+                    "title": doc.get("title", "No Title Available"),
+                    "url": doc.get("url", "No URL Available")
+                })
+            
             self._emit_event("documents_retrieved", {
                 "document_count": len(state["documents"]),
+                "documents": documents_list,
                 "status": f"Retrieved {len(state['documents'])} relevant documents"
             }, agent="retriever")
         elif node_name == "synthesizer" and state.get("draft_answer"):
