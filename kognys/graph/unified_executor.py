@@ -49,11 +49,9 @@ class UnifiedExecutor:
         # Then stream new events as they arrive
         event_queue = queue.Queue()
         
-        def log_callback(event_type: str, data: Dict[str, Any]):
-            # Get the most recent event (which includes agent info)
-            with self._events_lock:
-                if self._recent_events:
-                    event_queue.put(self._recent_events[-1])
+        def log_callback(event: Dict[str, Any]):
+            # Put the full event in the queue
+            event_queue.put(event)
         
         self.add_event_callback(log_callback)
         
@@ -80,32 +78,38 @@ class UnifiedExecutor:
             }
     
     def _emit_event(self, event_type: str, data: Dict[str, Any], agent: str = None):
-        """Emit an event to all registered callbacks."""
-        print(f"📡 UnifiedExecutor emitting: {event_type}")
+        """Emit an event to all registered callbacks, preventing immediate duplicates."""
         
-        # Create event with timestamp and agent info
+        # Create the potential new event
         event = {
             "event_type": event_type,
-            "data": data.copy(),  # Copy to avoid modifying original
+            "data": data.copy(),
             "timestamp": time.time(),
             "agent": agent
         }
-        
-        # Add agent to data if provided (for backward compatibility)
-        if agent:
-            event["data"]["agent"] = agent
-        
-        # Store in recent events for logs endpoint
+
         with self._events_lock:
+            # Check if the last event is identical to this one
+            if self._recent_events:
+                last_event = self._recent_events[-1]
+                if last_event["event_type"] == event_type and last_event["agent"] == agent:
+                    print(f"🤫 Skipping immediate duplicate event emission for: {event_type}")
+                    return # Do not emit or store the duplicate event
+
+            print(f"📡 UnifiedExecutor emitting: {event_type}")
+            
+            if agent:
+                event["data"]["agent"] = agent
+            
             self._recent_events.append(event)
-            # Keep only the most recent events
             if len(self._recent_events) > self._max_events:
                 self._recent_events.pop(0)
         
         if not self._stop_event.is_set():
             for callback in self.event_callbacks:
                 try:
-                    callback(event_type, data)
+                    # Pass the full event object to the callback
+                    callback(event) 
                 except Exception as e:
                     print(f"Error in event callback: {e}")
     
@@ -157,6 +161,10 @@ class UnifiedExecutor:
                     elif kind == "on_chain_end":
                         # A node has finished executing
                         node_name = event["name"]
+                        if node_name in ["LangGraph", "RunnableSequence", "__end__"] or node_name.startswith("route_"):
+                            print(f"🔄 Skipping internal event for node '{node_name}' to avoid duplicates")
+                            continue
+                        
                         state_update = event["data"]["output"]
                         print(f"🔄 Processing node completion: {node_name}")
                         self._emit_node_completion_event(node_name, state_update)
@@ -285,112 +293,87 @@ class UnifiedExecutor:
         
         print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
         
-        # Emit start event
+        event_queue = asyncio.Queue()
+
+        def stream_callback(event: Dict[str, Any]):
+            event_queue.put_nowait(event)
+
+        self.add_event_callback(stream_callback)
+        
+        # Emit the start event
         self._emit_event("research_started", {
             "question": initial_state.question,
             "task_id": config.get("configurable", {}).get("thread_id"),
             "status": "Starting research process..."
         }, agent="system")
         
-        # Yield the start event  
-        with self._events_lock:
-            if self._recent_events:
-                yield self._recent_events[-1]
-        
-        try:
-            print(f"📝 Executing graph with async streaming...")
-            
-            # Track completion state  
-            final_result = None
-            
-            # Use async graph streaming directly (no thread conflicts)
-            async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
-                kind = event["event"]
+        # Create a background task to run the graph with streaming
+        async def run_graph():
+            try:
+                print(f"📝 Executing graph with async streaming...")
+                final_result = None
                 
-                if kind == "on_chain_start":
-                    # A new node is starting to execute
-                    node_name = event["name"]
-                    print(f"🚀 Starting node: {node_name}")
-                
-                elif kind == "on_chain_stream":
-                    # A streaming node is yielding a chunk
-                    chunk = event["data"]["chunk"]
-                    node_name = event.get("name", "unknown")
+                async for event in self.graph.astream_events(initial_state, config=config, version="v1"):
+                    kind = event["event"]
                     
-                    if not chunk:
-                        continue
+                    if kind == "on_chain_stream":
+                        chunk = event["data"]["chunk"]
+                        if not chunk:
+                            continue
+                            
+                        if "draft_answer_token" in chunk:
+                            self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]}, agent="synthesizer")
+                        elif "criticism_token" in chunk:
+                            self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
+                        elif "final_answer_token" in chunk:
+                            self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
+
+                    elif kind == "on_chain_end":
+                        node_name = event["name"]
+                        if node_name in ["LangGraph", "RunnableSequence", "__end__"] or node_name.startswith("route_"):
+                            print(f"🔄 Skipping internal event for node '{node_name}' to avoid duplicates")
+                            continue
                         
-                    # Check for our custom token keys and include agent name
-                    if "draft_answer_token" in chunk:
-                        self._emit_event("draft_answer_token", {"token": chunk["draft_answer_token"]}, agent="synthesizer")
-                        # Yield immediately for real-time streaming
-                        with self._events_lock:
-                            if self._recent_events:
-                                yield self._recent_events[-1]
-                    elif "criticism_token" in chunk:
-                        self._emit_event("criticism_token", {"token": chunk["criticism_token"]}, agent="challenger")
-                        # Yield immediately for real-time streaming
-                        with self._events_lock:
-                            if self._recent_events:
-                                yield self._recent_events[-1]
-                    elif "final_answer_token" in chunk:
-                        self._emit_event("final_answer_token", {"token": chunk["final_answer_token"]}, agent="orchestrator")
-                        # Yield immediately for real-time streaming
-                        with self._events_lock:
-                            if self._recent_events:
-                                yield self._recent_events[-1]
+                        state_update = event["data"]["output"]
+                        print(f"🔄 Processing node completion: {node_name}")
+                        self._emit_node_completion_event(node_name, state_update)
+                        final_result = state_update
 
-                elif kind == "on_chain_end":
-                    # A node has finished executing
-                    node_name = event["name"]
-                    state_update = event["data"]["output"]
-                    print(f"🔄 Processing node completion: {node_name}")
-                    self._emit_node_completion_event(node_name, state_update)
-                    final_result = state_update # Store the last complete state
-                    
-                    # Yield events as they are stored
-                    with self._events_lock:
-                        if self._recent_events:
-                            yield self._recent_events[-1]
+                print(f"📝 Graph execution completed")
+                
+                if not final_result or not final_result.get("final_answer"):
+                    if not getattr(self, '_research_completed_emitted', False):
+                        print(f"📝 Emitting research_failed event")
+                        self._emit_event("research_failed", {
+                            "error": "No final answer generated",
+                            "status": "Research process failed to generate a final answer"
+                        }, agent="system")
+                
+            except Exception as e:
+                print(f"❌ Error during graph execution in streaming task: {e}")
+                if isinstance(e, ValueError):
+                    self._emit_event("validation_error", {
+                        "error": str(e),
+                        "status": "Question validation failed",
+                        "suggestion": "Please rephrase your question to be more specific and research-worthy."
+                    }, agent="input_validator")
+                else:
+                    self._emit_event("error", {"error": str(e)}, agent="system")
+            finally:
+                await event_queue.put(None) # Sentinel to signal completion
 
-            print(f"📝 Graph execution completed")
-            
-            # Final check for success
-            if not final_result or not final_result.get("final_answer"):
-                if not hasattr(self, '_research_completed_emitted') or not self._research_completed_emitted:
-                    print(f"📝 Emitting research_failed event")
-                    self._emit_event("research_failed", {
-                        "error": "No final answer generated",
-                        "status": "Research process failed to generate a final answer"
-                    }, agent="system")
-                    
-                    # Yield the failure event
-                    with self._events_lock:
-                        if self._recent_events:
-                            yield self._recent_events[-1]
-            
-        except Exception as e:
-            print(f"❌ Error in execute_streaming: {e}")
-            # Handle validation errors specifically
-            if isinstance(e, ValueError):
-                self._emit_event("validation_error", {
-                    "error": str(e),
-                    "status": "Question validation failed",
-                    "suggestion": "Please rephrase your question to be more specific and research-worthy."
-                }, agent="input_validator")
-            else:
-                self._emit_event("error", {
-                    "error": str(e),
-                    "status": "An error occurred during research"
-                }, agent="system")
-            
-            # Yield the error event  
-            with self._events_lock:
-                if self._recent_events:
-                    yield self._recent_events[-1]
-            raise
+        exec_task = asyncio.create_task(run_graph())
+
+        try:
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
+                yield event
         finally:
-            self._stop_event.set()
+            exec_task.cancel()
+            # Clean up the callback to avoid memory leaks
+            self.event_callbacks.remove(stream_callback)
 
 # Create unified executor instance
 unified_executor = UnifiedExecutor(kognys_graph) 
