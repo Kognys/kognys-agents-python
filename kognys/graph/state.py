@@ -1,4 +1,3 @@
-# kognys/graph/state.py
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -18,6 +17,13 @@ class KognysState(BaseModel):
         default=None,
         description="The validated and potentially revised question for research."
     )
+
+    # --- Refined Queries ---
+    refined_queries: Dict[str, str] = Field(
+        default_factory=dict,
+        description="A dictionary of search queries optimized for specific APIs (e.g., openalex, semantic_scholar, arxiv)."
+    )
+    # ---------------
     documents: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="A list of retrieved documents from the vector store."

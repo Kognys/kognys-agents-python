@@ -1,4 +1,3 @@
-# kognys/agents/retriever.py
 from kognys.graph.state import KognysState
 from kognys.services.openalex_client import search_works
 from kognys.services.arxiv_client import search_arxiv
@@ -7,22 +6,31 @@ from kognys.utils.transcript import append_entry
 
 def node(state: KognysState) -> dict:
     """
-    Retrieves documents from OpenAlex, arXiv, and Semantic Scholar and tags each with its source.
+    Retrieves documents using refined queries for OpenAlex, arXiv, and Semantic Scholar.
     """
-    query = state.validated_question or state.question
+    refined_queries = state.get("refined_queries")
+    if not refined_queries:
+        raise ValueError("Refined queries are missing from the state.")
     
-    print(f"---RETRIEVER: Searching for: '{query}'---")
+    print("---RETRIEVER: Searching with refined queries---")
     
-    # Search academic sources
-    openalex_docs = search_works(query, k=5)
+    # Use the specific, optimized query for each service
+    openalex_query = refined_queries.get("openalex")
+    arxiv_query = refined_queries.get("arxiv")
+    semantic_scholar_query = refined_queries.get("semantic_scholar")
+
+    print(f"  - [OpenAlex] Query: '{openalex_query}'")
+    openalex_docs = search_works(openalex_query, k=5)
     for doc in openalex_docs:
         doc['source'] = 'OpenAlex'
 
-    arxiv_docs = search_arxiv(query, k=5)
+    print(f"  - [arXiv] Query: '{arxiv_query}'")
+    arxiv_docs = search_arxiv(arxiv_query, k=5)
     for doc in arxiv_docs:
         doc['source'] = 'arXiv'
 
-    semantic_scholar_docs = search_semantic_scholar(query, k=5)
+    print(f"  - [Semantic Scholar] Query: '{semantic_scholar_query}'")
+    semantic_scholar_docs = search_semantic_scholar(semantic_scholar_query, k=5)
     for doc in semantic_scholar_docs:
         doc['source'] = 'Semantic Scholar'
     
@@ -45,8 +53,8 @@ def node(state: KognysState) -> dict:
     update_dict["transcript"] = append_entry(
         state.transcript,
         agent="Retriever",
-        action="Retrieved documents",
-        details=f"{len(combined_docs)} docs"
+        action="Retrieved documents with refined queries",
+        details=f"{len(combined_docs)} docs found"
     )
     
     return update_dict

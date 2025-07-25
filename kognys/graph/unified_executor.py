@@ -236,6 +236,13 @@ class UnifiedExecutor:
                 "status": "Question validated and refined",
                 "task_id": state.get("task_id") # Pass the task_id as soon as it's created
             }, agent="input_validator")
+
+        elif node_name == "query_refiner" and state.get("refined_queries"):
+            self._emit_event("queries_refined", {
+                "refined_queries": state.get("refined_queries"),
+                "status": "Optimized queries for each data source"
+            }, agent="query_refiner")
+
         elif node_name == "retriever" and "documents" in state:
             documents = state.get("documents", [])
             document_details = [

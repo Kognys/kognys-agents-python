@@ -84,6 +84,7 @@ async def node(state: KognysState) -> AsyncGenerator[dict, None]:
     if response.decision == "RESEARCH_AGAIN":
         final_state = {
             "validated_question": response.next_query, 
+            "refined_queries": {},
             "documents": [], 
             "revisions": state.revisions + 1,
             "transcript": append_entry(
