@@ -250,67 +250,47 @@ def finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> dict:
     
     return {"success": False, "transaction_hash": None}
 
-def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> bool:
+def store_final_answer_in_kb(paper_id: str, paper_content: str, original_question: str, user_id: str = None) -> dict:
     """Stores the final answer in the Membase Knowledge Base to make it searchable."""
+    if not API_BASE_URL:
+        return {"success": False, "error": "MEMBASE_API_URL not set"}
+        
     kb_url = f"{API_BASE_URL}/api/v1/knowledge/documents"
     metadata = {"paper_id": paper_id, "original_question": original_question}
     if user_id:
-        # Normalize user_id to lowercase if it's an Ethereum address
-        normalized_user_id = normalize_address(user_id) or user_id
-        metadata["user_id"] = normalized_user_id
-    document = {"content": paper_content, "metadata": metadata}
-    payload = {"documents": document, "strict": True}
-    
-    start_time = time.time()
-    payload_size = len(json.dumps(payload).encode('utf-8'))
+        metadata["user_id"] = normalize_address(user_id) or user_id
+    payload = {"documents": {"content": paper_content, "metadata": metadata}}
     
     print(f"\n--- 📤 Storing Final Answer in Membase KB ---")
-    print(f"  - Endpoint: POST {kb_url}")
-    print(f"  - Data Size: {payload_size / 1024:.2f} KB")
-    print(f"  - User ID in metadata: {metadata.get('user_id', 'None')}")
-    print(f"  - Payload structure: documents={{'content': '...', 'metadata': {metadata!r}}}")
-
     try:
         response = requests.post(kb_url, json=payload, timeout=30)
         response.raise_for_status()
-        duration = time.time() - start_time
-        print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
-        return True
+        print(f"  - ✅ Success ({response.status_code})")
+        return {"success": True, "ids": response.json().get("ids")}
     except requests.exceptions.RequestException as e:
-        duration = time.time() - start_time
-        print(f"  - ❌ FAILED | Took {duration:.2f} seconds | Error: {e}")
-        if 'response' in locals() and hasattr(response, 'text'):
-            print(f"     Response Body: {response.text}")
-        return False
+        print(f"  - ❌ FAILED | Error: {e}")
+        return {"success": False, "error": str(e)}
 
-def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) -> bool:
+def store_transcript_in_memory(paper_id: str, transcript: List[Dict[str, Any]]) -> dict:
     """Stores the debate transcript as a conversation in Membase."""
+    if not API_BASE_URL:
+        return {"success": False, "error": "MEMBASE_API_URL not set"}
+        
     convo_url = f"{API_BASE_URL}/api/v1/memory/conversations/{paper_id}/messages"
-    membase_messages = [{"name": e.get("agent", "system"), "content": f"{e.get('action', '')}: {e.get('details', '') or e.get('output', '')}", "role": "assistant"} for e in transcript]
-    payload = {"messages": membase_messages}
+    messages = [{"name": e.get("agent", "system"), "content": f"{e.get('action', '')}: {e.get('output', '')}", "role": "assistant"} for e in transcript]
     
-    start_time = time.time()
-    payload_size = len(json.dumps(payload).encode('utf-8'))
-
     print(f"\n--- 📤 Storing Transcript in Membase Conversations ---")
-    print(f"  - Endpoint: POST {convo_url}")
-    print(f"  - Data Size: {payload_size / 1024:.2f} KB")
-
     try:
         # First, ensure the conversation exists
         requests.post(f"{API_BASE_URL}/api/v1/memory/conversations", json={"conversation_id": paper_id}, timeout=30)
         # Then, add the messages
-        response = requests.post(convo_url, json=payload, timeout=30)
+        response = requests.post(convo_url, json={"messages": messages}, timeout=30)
         response.raise_for_status()
-        duration = time.time() - start_time
-        print(f"  - ✅ Success ({response.status_code}) | Took {duration:.2f} seconds")
-        return True
+        print(f"  - ✅ Success ({response.status_code})")
+        return {"success": True}
     except requests.exceptions.RequestException as e:
-        duration = time.time() - start_time
-        print(f"  - ❌ FAILED | Took {duration:.2f} seconds | Error: {e}")
-        if 'response' in locals() and hasattr(response, 'text'):
-            print(f"     Response Body: {response.text}")
-        return False
+        print(f"  - ❌ FAILED | Error: {e}")
+        return {"success": False, "error": str(e)}
 
 def get_paper_from_kb(paper_id: str) -> dict | None:
     """Retrieves a paper from the Membase Knowledge Base by its paper_id metadata."""

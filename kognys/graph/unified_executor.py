@@ -232,18 +232,14 @@ class UnifiedExecutor:
 
         if node_name == "input_validator" and state.get("validated_question"):
             self._emit_event("question_validated", {
-                "validated_question": state["validated_question"],
-                "status": "Question validated and refined"
+                "validated_question": state.get("validated_question"),
+                "status": "Question validated and refined",
+                "task_id": state.get("task_id") # Pass the task_id as soon as it's created
             }, agent="input_validator")
         elif node_name == "retriever" and "documents" in state:
             documents = state.get("documents", [])
-            # Include the new 'source' field in the payload
             document_details = [
-                {
-                    "title": doc.get("title", "No Title"), 
-                    "url": doc.get("url", "No URL"),
-                    "source": doc.get("source", "Unknown") # Add the source here
-                }
+                {"title": doc.get("title", "No Title"), "url": doc.get("url", "No URL"), "source": doc.get("source", "Unknown")}
                 for doc in documents
             ]
             self._emit_event("documents_retrieved", {
@@ -253,21 +249,21 @@ class UnifiedExecutor:
             }, agent="retriever")
         elif node_name == "synthesizer" and state.get("draft_answer"):
             self._emit_event("draft_generated", {
-                "draft_length": len(state["draft_answer"]),
+                "draft_length": len(state.get("draft_answer", "")),
                 "status": "Initial draft generated"
             }, agent="synthesizer")
         elif node_name == "challenger" and state.get("criticisms"):
             self._emit_event("criticisms_received", {
-                "criticism_count": len(state["criticisms"]),
-                "status": f"Received {len(state['criticisms'])} criticisms for improvement"
+                "criticism_count": len(state.get("criticisms", [])),
+                "status": f"Received {len(state.get('criticisms', []))} criticisms for improvement"
             }, agent="challenger")
         elif node_name == "orchestrator":
             decision = "unknown"
-            if state.get("transcript") and len(state["transcript"]) > 0:
-                latest_entry = state["transcript"][-1]
+            transcript = state.get("transcript", [])
+            if transcript:
+                latest_entry = transcript[-1]
                 if latest_entry.get("agent") == "Orchestrator":
                     decision = latest_entry.get("output", "unknown")
-            
             self._emit_event("orchestrator_decision", {
                 "decision": decision,
                 "status": f"Orchestrator decided: {decision}"
@@ -275,8 +271,9 @@ class UnifiedExecutor:
         elif node_name == "publisher" and state.get("final_answer"):
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
-                "final_answer": state["final_answer"],
-                "status": "Research completed successfully"
+                "final_answer": state.get("final_answer"),
+                "status": "Research completed successfully",
+                "verifiable_data": state.get("verifiable_data", {}) # Include all on-chain data
             }, agent="publisher")
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
