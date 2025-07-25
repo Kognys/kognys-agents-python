@@ -4,55 +4,29 @@ from kognys.services.openalex_client import search_works
 from kognys.services.arxiv_client import search_arxiv
 from kognys.services.semantic_scholar_client import search_semantic_scholar
 from kognys.utils.transcript import append_entry
-from kognys.config import ENABLE_AIP_AGENTS, AIP_USE_ROUTING, AIP_RETRIEVER_ID
-from kognys.services.membase_client import query_aip_agent, route_request
 
 def node(state: KognysState) -> dict:
     """
-    Retrieves documents from OpenAlex, arXiv, and Semantic Scholar.
-    Optionally uses AIP agents for enhanced retrieval if enabled.
+    Retrieves documents from OpenAlex, arXiv, and Semantic Scholar and tags each with its source.
     """
     query = state.validated_question or state.question
     
     print(f"---RETRIEVER: Searching for: '{query}'---")
     
-    # Check if we should use AIP routing for smarter search
-    if ENABLE_AIP_AGENTS and AIP_USE_ROUTING:
-        routes = route_request(query, top_k=3)
-        if routes:
-            print(f"---RETRIEVER: AIP routing suggests {len(routes)} approaches---")
-    
-    # Traditional search from academic sources
+    # Search academic sources
     openalex_docs = search_works(query, k=5)
+    for doc in openalex_docs:
+        doc['source'] = 'OpenAlex'
+
     arxiv_docs = search_arxiv(query, k=5)
+    for doc in arxiv_docs:
+        doc['source'] = 'arXiv'
+
     semantic_scholar_docs = search_semantic_scholar(query, k=5)
+    for doc in semantic_scholar_docs:
+        doc['source'] = 'Semantic Scholar'
     
     combined_docs = openalex_docs + arxiv_docs + semantic_scholar_docs
-    
-    # If AIP is enabled, query the AIP retriever for additional insights
-    if ENABLE_AIP_AGENTS:
-        try:
-            aip_prompt = f"""Based on the research question: '{query}'
-            
-Please suggest:
-1. Key search terms and concepts to explore
-2. Related topics that might be relevant
-3. Specific types of papers or sources to look for
-            
-Current sources found: {len(combined_docs)} documents from OpenAlex, arXiv, and Semantic Scholar."""
-            
-            aip_response = query_aip_agent(
-                agent_id=AIP_RETRIEVER_ID,
-                query=aip_prompt,
-                conversation_id=f"research-{state.paper_id}"
-            )
-            
-            if aip_response.get("response"):
-                print(f"---RETRIEVER: AIP agent provided additional search guidance---")
-                # Could potentially use this to refine search or add metadata
-                
-        except Exception as e:
-            print(f"---RETRIEVER: AIP enhancement failed: {e}, continuing with traditional search---")
     
     if not combined_docs:
         print("---RETRIEVER: No documents found from any source.---")
@@ -63,8 +37,8 @@ Current sources found: {len(combined_docs)} documents from OpenAlex, arXiv, and 
         print("---RETRIEVER: Sources Found ---")
         for doc in combined_docs:
             title = doc.get('title', 'No Title Available')
-            url = doc.get('url', 'No URL Available')
-            print(f"  - \"{title}\" ({url})")
+            source = doc.get('source', 'Unknown Source')
+            print(f"  - [{source}] \"{title}\"")
             
         update_dict = {"documents": combined_docs, "retrieval_status": "Documents found"}
     

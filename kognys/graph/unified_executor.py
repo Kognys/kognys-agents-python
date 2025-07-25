@@ -237,8 +237,13 @@ class UnifiedExecutor:
             }, agent="input_validator")
         elif node_name == "retriever" and "documents" in state:
             documents = state.get("documents", [])
+            # Include the new 'source' field in the payload
             document_details = [
-                {"title": doc.get("title", "No Title"), "url": doc.get("url", "No URL")}
+                {
+                    "title": doc.get("title", "No Title"), 
+                    "url": doc.get("url", "No URL"),
+                    "source": doc.get("source", "Unknown") # Add the source here
+                }
                 for doc in documents
             ]
             self._emit_event("documents_retrieved", {
@@ -271,8 +276,7 @@ class UnifiedExecutor:
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
                 "final_answer": state["final_answer"],
-                "status": "Research completed successfully",
-                "verifiable_data": state.get("verifiable_data", {}) # Include the on-chain data
+                "status": "Research completed successfully"
             }, agent="publisher")
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
