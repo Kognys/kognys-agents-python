@@ -8,7 +8,8 @@ def node(state: KognysState) -> dict:
     """
     Retrieves documents using refined queries for OpenAlex, arXiv, and Semantic Scholar.
     """
-    refined_queries = state.get("refined_queries")
+    
+    refined_queries = state.refined_queries
     if not refined_queries:
         raise ValueError("Refined queries are missing from the state.")
     

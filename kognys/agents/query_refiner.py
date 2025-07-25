@@ -19,20 +19,20 @@ _PROMPT = ChatPromptTemplate.from_messages(
             **API Query Guidelines:**
 
             1.  **OpenAlex:**
-                -   [cite_start]Uses a general `search` parameter that covers titles, abstracts, and full text. [cite: 5060]
-                -   Focus on clear, concise keywords. [cite_start]Boolean operators (AND, OR, NOT) are supported. [cite: 5667]
+                -   Uses a general `search` parameter that covers titles, abstracts, and full text.
+                -   Focus on clear, concise keywords. Boolean operators (AND, OR, NOT) are supported.
                 -   Example: `(synthetic biology) AND (genome engineering OR CRISPR)`
 
             2.  **Semantic Scholar:**
-                -   [cite_start]Supports advanced syntax like `+` (AND), `|` (OR), `-` (NOT), and `*` (wildcard). [cite: 134, 137, 142]
-                -   [cite_start]Use quotation marks `""` for exact phrases. [cite: 81]
-                -   [cite_start]Can filter by year range, e.g., `year:2023-`. [cite: 77, 85]
+                -   Supports advanced syntax like `+` (AND), `|` (OR), `-` (NOT), and `*` (wildcard).
+                -   Use quotation marks `""` for exact phrases.
+                -   Can filter by year range, e.g., `year:2023-`.
                 -   Example: `"synthetic biology" + (developments | advancements) year:2023-`
 
             3.  **arXiv:**
-                -   [cite_start]Uses field prefixes: `ti:` (title), `abs:` (abstract), `au:` (author), `all:` (all fields). [cite: 4668]
-                -   [cite_start]Boolean operators are `AND`, `OR`, `ANDNOT`. [cite: 4673]
-                -   [cite_start]Group expressions with parentheses `()`. [cite: 4683]
+                -   Uses field prefixes: `ti:` (title), `abs:` (abstract), `au:` (author), `all:` (all fields).
+                -   Boolean operators are `AND`, `OR`, `ANDNOT`.
+                -   Group expressions with parentheses `()`.
                 -   Example: `abs:("synthetic biology" OR "genetic engineering") AND ti:(developments OR advancements)`
 
             Based on these rules, generate the three distinct, optimized queries. You must respond using the `RefinedQueries` JSON format.
@@ -46,7 +46,8 @@ def node(state: KognysState) -> dict:
     """
     Refines the user's question into optimized queries for each academic API.
     """
-    question = state.get("validated_question")
+    # FIX: Use attribute access instead of .get()
+    question = state.validated_question
     if not question:
         raise ValueError("Validated question is missing from state.")
 
