@@ -1,3 +1,4 @@
+# kognys/agents/query_refiner.py
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from kognys.config import powerful_llm

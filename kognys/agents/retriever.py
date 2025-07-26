@@ -1,3 +1,4 @@
+# kognys/agents/retriever.py
 from kognys.graph.state import KognysState
 from kognys.services.openalex_client import search_works
 from kognys.services.arxiv_client import search_arxiv
@@ -8,7 +9,7 @@ def node(state: KognysState) -> dict:
     """
     Retrieves documents using refined queries for OpenAlex, arXiv, and Semantic Scholar.
     """
-    
+
     refined_queries = state.refined_queries
     if not refined_queries:
         raise ValueError("Refined queries are missing from the state.")
