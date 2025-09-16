@@ -29,6 +29,9 @@ class UnifiedExecutor:
         self._recent_events = []
         self._max_events = 100
         self._events_lock = threading.Lock()
+        # Track processed nodes to prevent duplicate emissions
+        self._processed_nodes = set()
+        self._current_execution_id = None
     
     def add_event_callback(self, callback: Callable[[str, Dict[str, Any]], None]):
         """Add a callback function to be called when events occur."""
@@ -134,6 +137,11 @@ class UnifiedExecutor:
         """Execute the graph synchronously with real-time event emission during execution."""
         
         print(f"🚀 UnifiedExecutor.execute_sync called with question: {initial_state.question}")
+        
+        # Set execution ID and clear processed nodes for new execution
+        import uuid
+        self._current_execution_id = str(uuid.uuid4())
+        self._processed_nodes.clear()
         
         # Emit start event
         self._emit_event("research_started", {
@@ -246,6 +254,17 @@ class UnifiedExecutor:
         """Emits a single event summarizing the completion of a node's work."""
         if not state:
             return
+        
+        # Create unique key for this node completion in current execution
+        node_key = f"{self._current_execution_id}_{node_name}_{hash(str(state.get('task_id', '')))}"
+        
+        # Skip if we've already processed this node completion
+        if node_key in self._processed_nodes:
+            print(f"🤫 Skipping duplicate node completion event for: {node_name}")
+            return
+            
+        # Mark this node as processed
+        self._processed_nodes.add(node_key)
 
         if node_name == "input_validator" and state.get("validated_question"):
             self._emit_event("question_validated", {
@@ -388,6 +407,11 @@ class UnifiedExecutor:
         """Execute the graph with streaming events (for SSE)."""
         
         print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
+        
+        # Set execution ID and clear processed nodes for new execution
+        import uuid
+        self._current_execution_id = str(uuid.uuid4())
+        self._processed_nodes.clear()
         
         event_queue = asyncio.Queue()
 

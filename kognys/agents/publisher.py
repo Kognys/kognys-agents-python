@@ -4,7 +4,8 @@ import uuid
 import os
 import threading
 from kognys.graph.state import KognysState
-from kognys.services.membase_client import store_final_answer_in_kb, store_transcript_in_memory, finish_task
+from kognys.services.membase_client import store_final_answer_in_kb, store_transcript_in_memory, finish_task, async_finish_blockchain_operations
+import asyncio
 from kognys.services.unibase_da_client import archive_research_packet
 # --- REMOVED blockchain_client IMPORT ---
 from kognys.utils.transcript import append_entry
@@ -49,10 +50,24 @@ def node(state: KognysState) -> dict:
     )
     verifiable_data["da_storage_receipt"] = da_response
 
-    # 3. Finish the on-chain task and capture the transaction hash
+    # 3. Finish the on-chain task asynchronously (non-blocking)
     if task_id and agent_id:
-        finish_response = finish_task(task_id=task_id, agent_id=agent_id)
-        verifiable_data["finish_task_txn_hash"] = finish_response.get("transaction_hash")
+        print(f"🚀 Starting async blockchain finish operations for task: {task_id}")
+        try:
+            # Start async finish task in background
+            asyncio.create_task(async_finish_blockchain_operations(task_id, agent_id))
+            print(f"✅ Background blockchain finish operations initiated for task: {task_id}")
+            # Set placeholder hash since we're doing this async
+            verifiable_data["finish_task_txn_hash"] = "async_pending"
+        except Exception as e:
+            print(f"⚠️ WARNING: Could not start background blockchain finish operations: {e}")
+            # Fallback to sync operation if async fails
+            try:
+                finish_response = finish_task(task_id=task_id, agent_id=agent_id)
+                verifiable_data["finish_task_txn_hash"] = finish_response.get("transaction_hash")
+            except Exception as fallback_e:
+                print(f"❌ Fallback sync finish also failed: {fallback_e}")
+                verifiable_data["finish_task_txn_hash"] = "failed"
 
     # 4. Store transcript in a background thread
     threading.Thread(

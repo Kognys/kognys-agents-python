@@ -6,7 +6,8 @@ from kognys.config import fast_llm
 from kognys.graph.state import KognysState
 from kognys.utils.transcript import append_entry
 import os
-from kognys.services.membase_client import create_task, join_task, register_agent_if_not_exists
+from kognys.services.membase_client import create_task, join_task, register_agent_if_not_exists, async_blockchain_operations_background
+import asyncio
 
 # 1. Define the desired JSON output structure using Pydantic
 class ValidatorResponse(BaseModel):
@@ -59,14 +60,15 @@ def node(state: KognysState) -> dict:
     # Ensure agent is registered before creating/joining tasks
     register_agent_if_not_exists(agent_id)
 
-    # Create and join the on-chain task with enhanced error handling
-    task_created = create_task(task_id=unique_id_for_run)
-    if task_created:
-        task_joined = join_task(task_id=unique_id_for_run, agent_id=agent_id)
-        if not task_joined:
-            print(f"  - ⚠️  WARNING: Task created but joining failed. Continuing with research...")
-    else:
-        print(f"  - ⚠️  WARNING: Task creation failed. Continuing with research...")
+    # Start blockchain operations in the background (non-blocking)
+    print(f"🚀 Starting blockchain operations in background for task: {unique_id_for_run}")
+    try:
+        # Create a background task that doesn't block research
+        asyncio.create_task(async_blockchain_operations_background(unique_id_for_run, agent_id))
+        print(f"✅ Background blockchain operations initiated for task: {unique_id_for_run}")
+    except Exception as e:
+        print(f"⚠️ WARNING: Could not start background blockchain operations: {e}")
+        print(f"   Research will continue without blockchain tracking...")
 
     update_dict = {
         "validated_question": response.revised_question or state.question,

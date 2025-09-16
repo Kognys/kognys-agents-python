@@ -3,6 +3,8 @@ import os
 import requests
 import json
 import time
+import asyncio
+import aiohttp
 from typing import List, Dict, Any
 from time import sleep
 from kognys.utils.address import normalize_address
@@ -520,3 +522,184 @@ def route_request(request_text: str, top_k: int = 3) -> list:
     except requests.exceptions.RequestException as e:
         print(f"  - ❌ FAILED: Could not route request. Error: {e}")
         return []
+
+# ========================================
+# ASYNC BLOCKCHAIN OPERATIONS FOR PERFORMANCE
+# ========================================
+
+async def async_create_task(task_id: str, price: int = 1000, max_retries: int = 3) -> bool:
+    """Async version of create_task for non-blocking blockchain operations."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+        
+    task_url = f"{API_BASE_URL}/api/v1/tasks/create"
+    payload = {"task_id": task_id, "price": price}
+    headers = _get_headers()
+    
+    print(f"\n--- ⛓️ Creating On-Chain Task (Async) ---")
+    print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Task ID: {task_id}")
+    print(f"  - Price: {price}")
+
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(task_url, json=payload, headers=headers, timeout=30) as response:
+                    response.raise_for_status()
+                    response_data = await response.json()
+                    tx_hash = response_data.get('transaction_hash', 'N/A')
+                    print(f"  - ✅ Success: Task '{task_id}' created.")
+                    print(f"  - 🔗 Transaction Hash: {tx_hash}")
+                    return True
+        except aiohttp.ClientError as e:
+            # Handle nonce errors with retry logic
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Request error. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Could not create task '{task_id}'")
+            print(f"     Error: {str(e)}")
+            return False
+    
+    return False
+
+async def async_check_task_exists(task_id: str) -> bool:
+    """Async version of check_task_exists."""
+    if not API_BASE_URL:
+        return False
+        
+    check_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}"
+    headers = _get_headers()
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(check_url, headers=headers, timeout=10) as response:
+                return response.status == 200
+    except:
+        return False
+
+async def async_join_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Async version of join_task for non-blocking blockchain operations."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
+        return False
+        
+    task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/join"
+    payload = {"agent_id": agent_id}
+    headers = _get_headers()
+    
+    print(f"\n--- 🙋 Joining On-Chain Task (Async) ---")
+    print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Agent ID: {agent_id}")
+    print(f"  - Task ID: {task_id}")
+    
+    # Wait for task to exist on blockchain (up to 10 seconds)
+    print(f"  - ⏳ Waiting for task to be confirmed on blockchain...")
+    for i in range(10):
+        if await async_check_task_exists(task_id):
+            print(f"  - ✅ Task confirmed to exist (after {i+1}s)")
+            break
+        await asyncio.sleep(1)
+    else:
+        print(f"  - ❌ FAILED: Task '{task_id}' not found after 10 seconds")
+        return False
+    
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(task_url, json=payload, headers=headers, timeout=30) as response:
+                    response.raise_for_status()
+                    response_data = await response.json()
+                    tx_hash = response_data.get('transaction_hash', 'N/A')
+                    print(f"  - ✅ Success: Agent '{agent_id}' joined task '{task_id}'.")
+                    print(f"  - 🔗 Transaction Hash: {tx_hash}")
+                    return True
+        except aiohttp.ClientError as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"  - ⏳ Retry {attempt + 1}/{max_retries}: Request error, waiting {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Agent '{agent_id}' could not join task '{task_id}'")
+            print(f"     Error: {str(e)}")
+            return False
+    
+    return False
+
+async def async_finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
+    """Async version of finish_task for non-blocking blockchain operations."""
+    if not API_BASE_URL:
+        print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
+        return False
+    if not agent_id:
+        print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
+        return False
+        
+    task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/finish"
+    payload = {"agent_id": agent_id}
+    headers = _get_headers()
+    
+    print(f"\n--- ✅ Finishing On-Chain Task (Async) ---")
+    print(f"  - Endpoint: POST {task_url}")
+    print(f"  - Agent ID: {agent_id}")
+    print(f"  - Task ID: {task_id}")
+    
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(task_url, json=payload, headers=headers, timeout=30) as response:
+                    response.raise_for_status()
+                    response_data = await response.json()
+                    tx_hash = response_data.get('transaction_hash', 'N/A')
+                    print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
+                    print(f"  - 🔗 Transaction Hash: {tx_hash}")
+                    return True
+        except aiohttp.ClientError as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Linear backoff: 2s, 4s, 6s
+                print(f"  - ⚠️ Request error. Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            print(f"  - ❌ FAILED: Could not finish task '{task_id}'")
+            print(f"     Error: {str(e)}")
+            return False
+    
+    return False
+
+async def async_blockchain_operations_background(task_id: str, agent_id: str):
+    """Run all blockchain operations in the background without blocking research."""
+    print(f"🚀 Starting background blockchain operations for task: {task_id}")
+    
+    # Create task
+    create_success = await async_create_task(task_id)
+    if not create_success:
+        print(f"❌ Background blockchain: Failed to create task {task_id}")
+        return
+    
+    # Join task
+    join_success = await async_join_task(task_id, agent_id)
+    if not join_success:
+        print(f"❌ Background blockchain: Failed to join task {task_id}")
+        return
+    
+    print(f"✅ Background blockchain: Task {task_id} created and joined successfully")
+
+async def async_finish_blockchain_operations(task_id: str, agent_id: str):
+    """Finish blockchain operations after research is complete."""
+    print(f"🏁 Finishing blockchain operations for task: {task_id}")
+    
+    finish_success = await async_finish_task(task_id, agent_id)
+    if finish_success:
+        print(f"✅ Background blockchain: Task {task_id} finished successfully")
+    else:
+        print(f"❌ Background blockchain: Failed to finish task {task_id}")
+    
+    return finish_success
