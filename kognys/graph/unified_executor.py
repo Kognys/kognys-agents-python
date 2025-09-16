@@ -113,6 +113,23 @@ class UnifiedExecutor:
                 except Exception as e:
                     print(f"Error in event callback: {e}")
     
+    def _emit_agent_message(self, agent_name: str, agent_role: str, message: str, message_type: str = "speaking"):
+        """Emit an agent_message event for frontend compatibility."""
+        self._emit_event("agent_message", {
+            "agent_name": agent_name,
+            "agent_role": agent_role,
+            "message": message,
+            "message_type": message_type
+        }, agent=agent_name.lower().replace(" ", "_"))
+    
+    def _emit_agent_debate(self, agents: list, topic: str, status: str = "active"):
+        """Emit an agent_debate event for multi-agent collaboration scenarios."""
+        self._emit_event("agent_debate", {
+            "agents": agents,
+            "topic": topic,
+            "status": status
+        }, agent="system")
+    
     def execute_sync(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the graph synchronously with real-time event emission during execution."""
         
@@ -236,12 +253,29 @@ class UnifiedExecutor:
                 "status": "Question validated and refined",
                 "task_id": state.get("task_id") # Pass the task_id as soon as it's created
             }, agent="input_validator")
+            
+            # Emit agent message for frontend
+            self._emit_agent_message(
+                "Input Validator",
+                "Validation Expert",
+                f"I've validated and refined your question to: '{state.get('validated_question')}'",
+                "analyzing"
+            )
 
         elif node_name == "query_refiner" and state.get("refined_queries"):
             self._emit_event("queries_refined", {
                 "refined_queries": state.get("refined_queries"),
                 "status": "Optimized queries for each data source"
             }, agent="query_refiner")
+            
+            # Emit agent message for frontend
+            query_count = len(state.get("refined_queries", []))
+            self._emit_agent_message(
+                "Research Agent",
+                "Information Gatherer", 
+                f"I've optimized {query_count} search queries for different data sources to find the most relevant research.",
+                "thinking"
+            )
 
         elif node_name == "retriever" and "documents" in state:
             documents = state.get("documents", [])
@@ -254,16 +288,51 @@ class UnifiedExecutor:
                 "status": f"Retrieved {len(documents)} relevant documents",
                 "documents": document_details
             }, agent="retriever")
+            
+            # Emit agent message for frontend
+            sources = set(doc.get("source", "Unknown") for doc in documents)
+            self._emit_agent_message(
+                "Research Agent",
+                "Information Gatherer",
+                f"Found {len(documents)} relevant documents from {len(sources)} sources including research papers and academic publications.",
+                "speaking"
+            )
         elif node_name == "synthesizer" and state.get("draft_answer"):
             self._emit_event("draft_generated", {
                 "draft_length": len(state.get("draft_answer", "")),
                 "status": "Initial draft generated"
             }, agent="synthesizer")
+            
+            # Emit agent message for frontend
+            draft_length = len(state.get("draft_answer", ""))
+            self._emit_agent_message(
+                "Research Agent",
+                "Information Gatherer",
+                f"I've synthesized the research into a comprehensive {draft_length}-character draft answer based on the retrieved documents.",
+                "concluding"
+            )
         elif node_name == "challenger" and state.get("criticisms"):
             self._emit_event("criticisms_received", {
                 "criticism_count": len(state.get("criticisms", [])),
                 "status": f"Received {len(state.get('criticisms', []))} criticisms for improvement"
             }, agent="challenger")
+            
+            # Emit agent message for frontend
+            criticism_count = len(state.get("criticisms", []))
+            criticisms_text = "; ".join(state.get("criticisms", []))[:150] + "..." if len("; ".join(state.get("criticisms", []))) > 150 else "; ".join(state.get("criticisms", []))
+            self._emit_agent_message(
+                "Challenger",
+                "The Peer Reviewer",
+                f"I've identified {criticism_count} areas for improvement: {criticisms_text}",
+                "analyzing"
+            )
+            
+            # Emit agent debate event when challenger reviews research
+            if criticism_count > 0:
+                self._emit_agent_debate([
+                    {"name": "Research Agent", "role": "Information Gatherer"},
+                    {"name": "Challenger", "role": "The Peer Reviewer"}
+                ], "research quality and accuracy", "active")
         elif node_name == "orchestrator":
             decision = "unknown"
             transcript = state.get("transcript", [])
@@ -275,6 +344,14 @@ class UnifiedExecutor:
                 "decision": decision,
                 "status": f"Orchestrator decided: {decision}"
             }, agent="orchestrator")
+            
+            # Emit agent message for frontend
+            self._emit_agent_message(
+                "Research Orchestrator",
+                "Research Coordinator",
+                f"After reviewing the draft and criticisms, I've decided to: {decision}",
+                "thinking"
+            )
         elif node_name == "publisher" and state.get("final_answer"):
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
@@ -282,6 +359,15 @@ class UnifiedExecutor:
                 "status": "Research completed successfully",
                 "verifiable_data": state.get("verifiable_data", {}) # Include all on-chain data
             }, agent="publisher")
+            
+            # Emit agent message for frontend
+            final_answer = state.get("final_answer", "")
+            self._emit_agent_message(
+                "Research Orchestrator",
+                "Research Coordinator",
+                f"Research complete! I've finalized a comprehensive answer with {len(final_answer)} characters covering all aspects of your question.",
+                "concluding"
+            )
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the graph asynchronously with event emission."""
@@ -316,6 +402,14 @@ class UnifiedExecutor:
             "task_id": config.get("configurable", {}).get("thread_id"),
             "status": "Starting research process..."
         }, agent="system")
+        
+        # Emit initial agent message for frontend
+        self._emit_agent_message(
+            "Research Orchestrator",
+            "Research Coordinator", 
+            f"Starting comprehensive research on: '{initial_state.question}'. I'll coordinate multiple agents to provide you with the most accurate and complete answer.",
+            "speaking"
+        )
         
         # Create a background task to run the graph with streaming
         async def run_graph():
