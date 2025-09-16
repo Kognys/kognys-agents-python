@@ -63,9 +63,24 @@ def node(state: KognysState) -> dict:
     # Start blockchain operations in the background (non-blocking)
     print(f"🚀 Starting blockchain operations in background for task: {unique_id_for_run}")
     try:
-        # Create a background task that doesn't block research
-        asyncio.create_task(async_blockchain_operations_background(unique_id_for_run, agent_id))
-        print(f"✅ Background blockchain operations initiated for task: {unique_id_for_run}")
+        # Try to get the current event loop, create one if needed
+        try:
+            loop = asyncio.get_running_loop()
+            # Create task in the existing event loop
+            loop.create_task(async_blockchain_operations_background(unique_id_for_run, agent_id))
+            print(f"✅ Background blockchain operations initiated for task: {unique_id_for_run}")
+        except RuntimeError:
+            # No event loop running, start operations in a thread
+            import threading
+            def run_blockchain_background():
+                try:
+                    asyncio.run(async_blockchain_operations_background(unique_id_for_run, agent_id))
+                except Exception as thread_e:
+                    print(f"⚠️ Background blockchain thread error: {thread_e}")
+            
+            blockchain_thread = threading.Thread(target=run_blockchain_background, daemon=True)
+            blockchain_thread.start()
+            print(f"✅ Background blockchain operations started in thread for task: {unique_id_for_run}")
     except Exception as e:
         print(f"⚠️ WARNING: Could not start background blockchain operations: {e}")
         print(f"   Research will continue without blockchain tracking...")

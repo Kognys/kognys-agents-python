@@ -54,11 +54,27 @@ def node(state: KognysState) -> dict:
     if task_id and agent_id:
         print(f"🚀 Starting async blockchain finish operations for task: {task_id}")
         try:
-            # Start async finish task in background
-            asyncio.create_task(async_finish_blockchain_operations(task_id, agent_id))
-            print(f"✅ Background blockchain finish operations initiated for task: {task_id}")
-            # Set placeholder hash since we're doing this async
-            verifiable_data["finish_task_txn_hash"] = "async_pending"
+            # Try to get the current event loop, create one if needed
+            try:
+                loop = asyncio.get_running_loop()
+                # Create task in the existing event loop
+                loop.create_task(async_finish_blockchain_operations(task_id, agent_id))
+                print(f"✅ Background blockchain finish operations initiated for task: {task_id}")
+                # Set placeholder hash since we're doing this async
+                verifiable_data["finish_task_txn_hash"] = "async_pending"
+            except RuntimeError:
+                # No event loop running, start operations in a thread
+                def run_finish_blockchain_background():
+                    try:
+                        asyncio.run(async_finish_blockchain_operations(task_id, agent_id))
+                    except Exception as thread_e:
+                        print(f"⚠️ Background blockchain finish thread error: {thread_e}")
+                
+                finish_thread = threading.Thread(target=run_finish_blockchain_background, daemon=True)
+                finish_thread.start()
+                print(f"✅ Background blockchain finish operations started in thread for task: {task_id}")
+                # Set placeholder hash since we're doing this async
+                verifiable_data["finish_task_txn_hash"] = "async_pending"
         except Exception as e:
             print(f"⚠️ WARNING: Could not start background blockchain finish operations: {e}")
             # Fallback to sync operation if async fails
