@@ -21,6 +21,7 @@ from kognys.graph.state import KognysState
 from kognys.graph.unified_executor import unified_executor
 from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb, get_papers_by_user_id
 from kognys.services.error_handler import generate_error_response
+from kognys.services.cache_manager import cache_manager
 from kognys.utils.aip_init import initialize_aip_agents
 from kognys.utils.address import normalize_address
 
@@ -33,7 +34,12 @@ def generate_paper_id(question: str, content: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("--- API STARTUP: REGISTERING AGENT ---")
+    print("--- API STARTUP: INITIALIZING SERVICES ---")
+    
+    # Initialize cache manager
+    await cache_manager.connect()
+    
+    # Register agent
     agent_id = os.getenv("MEMBASE_ID", "kognys_starter")
     is_registered = register_agent_if_not_exists(agent_id=agent_id)
     
@@ -44,8 +50,14 @@ async def lifespan(app: FastAPI):
         print("!!! WARNING: Agent registration failed. !!!")
     else:
         print("--- AGENT REGISTRATION COMPLETE ---")
+    
+    print("--- ALL SERVICES INITIALIZED ---")
     yield
-    print("--- API SHUTDOWN ---")
+    
+    # Cleanup on shutdown
+    print("--- API SHUTDOWN: CLEANING UP ---")
+    await cache_manager.disconnect()
+    print("--- API SHUTDOWN COMPLETE ---")
 
 app = FastAPI(
     title="Kognys Research Agent API",

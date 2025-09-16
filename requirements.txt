@@ -10,6 +10,9 @@ openai
 langgraph
 langchain-google-genai
 
+# Caching and Rate Limiting
+redis>=5.0.0
+
 # Testing
 pytest
 httpx

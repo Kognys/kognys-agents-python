@@ -1,10 +1,15 @@
 # kognys/services/arxiv_client.py
 import requests
 import xml.etree.ElementTree as ET
+import asyncio
+from typing import List, Dict, Optional
+from kognys.services.cache_manager import cache_manager
+from kognys.services.rate_limiter import rate_limit_manager, Priority
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
-def search_arxiv(query: str, k: int = 5) -> list[dict]:
+def _search_arxiv_api(query: str, k: int = 5) -> list[dict]:
+    """Internal function to make the actual API call"""
     params = {"search_query": f'all:"{query}"', "start": 0, "max_results": k, "sortBy": "relevance"}
     try:
         response = requests.get(ARXIV_API_URL, params=params, timeout=15)
@@ -29,3 +34,41 @@ def search_arxiv(query: str, k: int = 5) -> list[dict]:
     except requests.exceptions.RequestException as e:
         print(f"Error calling arXiv API: {e}")
         return []
+
+async def search_arxiv_async(query: str, k: int = 5, use_cache: bool = True, priority: Priority = Priority.NORMAL) -> list[dict]:
+    """Async version with caching and rate limiting"""
+    
+    # Check cache first
+    if use_cache:
+        cached_results = await cache_manager.get("arxiv", query, k)
+        if cached_results is not None:
+            return cached_results
+    
+    # Apply rate limiting
+    await rate_limit_manager.acquire("arxiv", priority)
+    
+    # Make the API call in a thread pool to avoid blocking
+    loop = asyncio.get_event_loop()
+    results = await loop.run_in_executor(None, _search_arxiv_api, query, k)
+    
+    # Cache the results if we got any
+    if results and use_cache:
+        await cache_manager.set("arxiv", query, k, results)
+    
+    return results
+
+def search_arxiv(query: str, k: int = 5) -> list[dict]:
+    """
+    Synchronous wrapper for backward compatibility.
+    Creates a new event loop if needed.
+    """
+    try:
+        # Try to get the current event loop
+        loop = asyncio.get_running_loop()
+        # If we're in an async context, create a task
+        future = asyncio.ensure_future(search_arxiv_async(query, k))
+        # This will block until complete, but that's okay for backward compatibility
+        return loop.run_until_complete(future)
+    except RuntimeError:
+        # No event loop running, create one
+        return asyncio.run(search_arxiv_async(query, k))
