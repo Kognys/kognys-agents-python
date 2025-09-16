@@ -5,6 +5,7 @@ import asyncio
 from typing import List, Dict, Optional
 from kognys.services.cache_manager import cache_manager
 from kognys.services.rate_limiter import rate_limit_manager, Priority
+from kognys.services.sync_cache import sync_cache_manager
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
@@ -59,16 +60,18 @@ async def search_arxiv_async(query: str, k: int = 5, use_cache: bool = True, pri
 
 def search_arxiv(query: str, k: int = 5) -> list[dict]:
     """
-    Synchronous wrapper for backward compatibility.
-    Creates a new event loop if needed.
+    Synchronous wrapper with caching support.
     """
-    try:
-        # Try to get the current event loop
-        loop = asyncio.get_running_loop()
-        # If we're in an async context, create a task
-        future = asyncio.ensure_future(search_arxiv_async(query, k))
-        # This will block until complete, but that's okay for backward compatibility
-        return loop.run_until_complete(future)
-    except RuntimeError:
-        # No event loop running, create one
-        return asyncio.run(search_arxiv_async(query, k))
+    # Check cache first
+    cached_results = sync_cache_manager.get("arxiv", query, k)
+    if cached_results is not None:
+        return cached_results
+    
+    # Make API call
+    results = _search_arxiv_api(query, k)
+    
+    # Cache results
+    if results:
+        sync_cache_manager.set("arxiv", query, k, results)
+    
+    return results
