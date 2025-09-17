@@ -372,6 +372,10 @@ class UnifiedExecutor:
                 "thinking"
             )
         elif node_name == "publisher" and state.get("final_answer"):
+            print(f"🔍 Publisher node completion - final_answer: {bool(state.get('final_answer'))}")
+            print(f"🔍 Publisher node completion - task_id: {state.get('task_id')}")
+            print(f"🔍 Publisher node completion - paper_id: {state.get('paper_id')}")
+            print(f"🔍 Publisher node completion - state keys: {list(state.keys())}")
             self._research_completed_emitted = True
             self._emit_event("research_completed", {
                 "final_answer": state.get("final_answer"),
@@ -387,6 +391,46 @@ class UnifiedExecutor:
                 f"Research complete! I've finalized a comprehensive answer with {len(final_answer)} characters covering all aspects of your question.",
                 "concluding"
             )
+            
+            # Start async blockchain finish operations with callback to emit transaction_confirmed
+            task_id = state.get("task_id")
+            if task_id:
+                import os
+                agent_id = os.getenv("MEMBASE_ID", "kognys_starter")
+                
+                # Import the async function
+                from kognys.services.membase_client import async_finish_blockchain_operations
+                
+                # Create callback that uses our event emission
+                def emit_callback(event):
+                    # Emit the event through our standard emission system
+                    try:
+                        for callback in self.event_callbacks:
+                            callback(event)
+                    except Exception as cb_e:
+                        print(f"⚠️ Error in transaction_confirmed callback: {cb_e}")
+                    
+                    # Also emit to the global transaction queue for the transaction stream
+                    try:
+                        from kognys.services.transaction_events import get_transaction_queue
+                        queue = get_transaction_queue()
+                        queue.put_nowait(event)
+                        print(f"📡 Also queued transaction event for transaction stream: {event.get('event_type')}")
+                    except Exception as queue_e:
+                        print(f"⚠️ Could not queue transaction event: {queue_e}")
+                
+                # Start blockchain operations with callback
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(async_finish_blockchain_operations(task_id, agent_id, emit_callback))
+                    print(f"🚀 Started async blockchain finish with transaction_confirmed callback")
+                except RuntimeError:
+                    # No event loop, use thread
+                    import threading
+                    def run_with_callback():
+                        asyncio.run(async_finish_blockchain_operations(task_id, agent_id, emit_callback))
+                    threading.Thread(target=run_with_callback, daemon=True).start()
+                    print(f"🚀 Started blockchain finish in thread with transaction_confirmed callback")
     
     async def execute_async(self, initial_state: KognysState, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the graph asynchronously with event emission."""

@@ -18,6 +18,9 @@ load_dotenv()
 
 from kognys.graph.builder import kognys_graph
 from kognys.graph.state import KognysState
+
+# Import transaction event system
+from kognys.services.transaction_events import get_transaction_queue, get_transaction_event
 from kognys.graph.unified_executor import unified_executor
 from kognys.services.membase_client import register_agent_if_not_exists, get_paper_from_kb, get_papers_by_user_id
 from kognys.services.error_handler import generate_error_response
@@ -313,6 +316,77 @@ async def stream_system_logs():
     
     return StreamingResponse(
         generate_log_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )
+
+@app.get("/transactions/stream")
+async def stream_transaction_events():
+    """Streams blockchain transaction events via Server-Sent Events."""
+    print("Starting transaction event streaming...")
+    
+    async def generate_transaction_stream():
+        """Generate SSE stream for blockchain transaction events."""
+        
+        # Use the shared transaction event system
+        
+        try:
+            # Send initial connection confirmation
+            initial_event = {
+                "event_type": "transaction_stream_connected",
+                "data": {"status": "Transaction stream ready", "timestamp": time.time()},
+                "timestamp": time.time(),
+                "agent": "system"
+            }
+            yield f"data: {json.dumps(initial_event)}\n\n"
+            
+            # Keep stream alive and listen for transaction events
+            while True:
+                try:
+                    # Wait for transaction events with timeout
+                    event = await get_transaction_event(timeout=30.0)
+                    if event is None:
+                        # Timeout occurred, send heartbeat
+                        raise asyncio.TimeoutError()
+                    
+                    # Format and yield the transaction event
+                    sse_data = f"data: {json.dumps(event)}\n\n"
+                    yield sse_data
+                    print(f"📤 Sent transaction event: {event.get('event_type')}")
+                    
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    heartbeat_event = {
+                        "event_type": "transaction_heartbeat",
+                        "data": {"status": "alive", "timestamp": time.time()},
+                        "timestamp": time.time(),
+                        "agent": "system"
+                    }
+                    yield f"data: {json.dumps(heartbeat_event)}\n\n"
+                    
+        except Exception as e:
+            print(f"Error in transaction streaming: {e}")
+            error_event = {
+                "event_type": "transaction_stream_error",
+                "data": {"error": str(e), "timestamp": time.time()},
+                "timestamp": time.time(),
+                "agent": "system"
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+        finally:
+            # Clean up the callback
+            try:
+                unified_executor.event_callbacks.remove(transaction_callback)
+            except ValueError:
+                pass  # Callback wasn't in the list
+    
+    return StreamingResponse(
+        generate_transaction_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

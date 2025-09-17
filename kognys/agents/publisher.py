@@ -50,40 +50,10 @@ def node(state: KognysState) -> dict:
     )
     verifiable_data["da_storage_receipt"] = da_response
 
-    # 3. Finish the on-chain task asynchronously (non-blocking)
-    if task_id and agent_id:
-        print(f"🚀 Starting async blockchain finish operations for task: {task_id}")
-        try:
-            # Try to get the current event loop, create one if needed
-            try:
-                loop = asyncio.get_running_loop()
-                # Create task in the existing event loop
-                loop.create_task(async_finish_blockchain_operations(task_id, agent_id))
-                print(f"✅ Background blockchain finish operations initiated for task: {task_id}")
-                # Set placeholder hash since we're doing this async
-                verifiable_data["finish_task_txn_hash"] = "async_pending"
-            except RuntimeError:
-                # No event loop running, start operations in a thread
-                def run_finish_blockchain_background():
-                    try:
-                        asyncio.run(async_finish_blockchain_operations(task_id, agent_id))
-                    except Exception as thread_e:
-                        print(f"⚠️ Background blockchain finish thread error: {thread_e}")
-                
-                finish_thread = threading.Thread(target=run_finish_blockchain_background, daemon=True)
-                finish_thread.start()
-                print(f"✅ Background blockchain finish operations started in thread for task: {task_id}")
-                # Set placeholder hash since we're doing this async
-                verifiable_data["finish_task_txn_hash"] = "async_pending"
-        except Exception as e:
-            print(f"⚠️ WARNING: Could not start background blockchain finish operations: {e}")
-            # Fallback to sync operation if async fails
-            try:
-                finish_response = finish_task(task_id=task_id, agent_id=agent_id)
-                verifiable_data["finish_task_txn_hash"] = finish_response.get("transaction_hash")
-            except Exception as fallback_e:
-                print(f"❌ Fallback sync finish also failed: {fallback_e}")
-                verifiable_data["finish_task_txn_hash"] = "failed"
+    # 3. Blockchain finish operations are now handled by UnifiedExecutor
+    # Set placeholder - real hash will be sent via transaction_confirmed event
+    verifiable_data["finish_task_txn_hash"] = "async_pending"
+    print(f"📝 Blockchain finish operations delegated to UnifiedExecutor for task: {task_id}")
 
     # 4. Store transcript in a background thread
     threading.Thread(
@@ -103,5 +73,7 @@ def node(state: KognysState) -> dict:
     return { 
         "final_answer": final_answer,
         "verifiable_data": verifiable_data,
-        "transcript": append_entry(transcript, agent="Publisher", action="Stored, archived, and finished task") 
+        "transcript": append_entry(transcript, agent="Publisher", action="Stored, archived, and finished task"),
+        "task_id": task_id,  # Include task_id so unified_executor can access it
+        "paper_id": paper_id  # Include paper_id for consistency
     }

@@ -692,14 +692,83 @@ async def async_blockchain_operations_background(task_id: str, agent_id: str):
     
     print(f"✅ Background blockchain: Task {task_id} created and joined successfully")
 
-async def async_finish_blockchain_operations(task_id: str, agent_id: str):
-    """Finish blockchain operations after research is complete."""
+async def async_finish_blockchain_operations(task_id: str, agent_id: str, emit_callback=None):
+    """Finish blockchain operations and emit transaction_confirmed event to frontend."""
     print(f"🏁 Finishing blockchain operations for task: {task_id}")
     
+    # Use the dedicated async_finish_task function
     finish_success = await async_finish_task(task_id, agent_id)
+    
     if finish_success:
         print(f"✅ Background blockchain: Task {task_id} finished successfully")
+        
+        # Get the actual transaction hash by querying the task
+        try:
+            if API_BASE_URL:
+                task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}"
+                headers = _get_headers()
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(task_url, headers=headers, timeout=10) as response:
+                        if response.status == 200:
+                            task_data = await response.json()
+                            actual_tx_hash = task_data.get('finish_transaction_hash') or task_data.get('transaction_hash', 'N/A')
+                            
+                            if actual_tx_hash and actual_tx_hash != 'N/A':
+                                transaction_event = {
+                                    "event_type": "transaction_confirmed",
+                                    "data": {
+                                        "task_id": task_id,
+                                        "transaction_hash": actual_tx_hash,
+                                        "operation": "task_finish",
+                                        "status": "Blockchain transaction confirmed"
+                                    },
+                                    "timestamp": time.time(),
+                                    "agent": "system"
+                                }
+                                
+                                # Send to global transaction queue using shared system
+                                try:
+                                    from kognys.services.transaction_events import emit_transaction_confirmed
+                                    emit_transaction_confirmed(task_id, actual_tx_hash, "task_finish")
+                                except Exception as queue_e:
+                                    print(f"⚠️ Could not emit transaction event: {queue_e}")
+                                
+                                # Also call callback if provided
+                                if emit_callback:
+                                    try:
+                                        emit_callback(transaction_event)
+                                        print(f"📡 Called transaction_confirmed callback with hash: {actual_tx_hash}")
+                                    except Exception as cb_e:
+                                        print(f"⚠️ Transaction callback error: {cb_e}")
+        except Exception as get_hash_e:
+            print(f"⚠️ Could not retrieve transaction hash: {get_hash_e}")
     else:
         print(f"❌ Background blockchain: Failed to finish task {task_id}")
+        
+        # Emit failure event
+        transaction_failed_event = {
+            "event_type": "transaction_failed",
+            "data": {
+                "task_id": task_id,
+                "error": "Task finish operation failed",
+                "operation": "task_finish",
+                "status": "Blockchain transaction failed"
+            },
+            "timestamp": time.time(),
+            "agent": "system"
+        }
+        
+        try:
+            from kognys.services.transaction_events import emit_transaction_failed
+            emit_transaction_failed(task_id, "Task finish operation failed", "task_finish")
+        except Exception as queue_e:
+            print(f"⚠️ Could not emit transaction failure event: {queue_e}")
+        
+        if emit_callback:
+            try:
+                emit_callback(transaction_failed_event)
+                print(f"📡 Called transaction_failed callback")
+            except Exception as cb_e:
+                print(f"⚠️ Transaction failure callback error: {cb_e}")
     
     return finish_success
