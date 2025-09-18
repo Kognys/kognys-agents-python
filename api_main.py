@@ -326,25 +326,25 @@ async def stream_system_logs():
     )
 
 @app.get("/transactions/stream")
-async def stream_transaction_events():
+async def stream_transaction_events(task_id: str = None):
     """Streams blockchain transaction events via Server-Sent Events."""
-    print("Starting transaction event streaming...")
-    
+    print(f"Starting transaction event streaming... (task_id: {task_id})")
+
     async def generate_transaction_stream():
         """Generate SSE stream for blockchain transaction events."""
-        
+
         # Use the shared transaction event system
-        
+
         try:
             # Send initial connection confirmation
             initial_event = {
                 "event_type": "transaction_stream_connected",
-                "data": {"status": "Transaction stream ready", "timestamp": time.time()},
+                "data": {"status": "Transaction stream ready", "timestamp": time.time(), "task_id": task_id},
                 "timestamp": time.time(),
                 "agent": "system"
             }
             yield f"data: {json.dumps(initial_event)}\n\n"
-            
+
             # Keep stream alive and listen for transaction events
             while True:
                 try:
@@ -353,11 +353,18 @@ async def stream_transaction_events():
                     if event is None:
                         # Timeout occurred, send heartbeat
                         raise asyncio.TimeoutError()
-                    
+
+                    # If task_id is specified, only send events for that task
+                    if task_id:
+                        event_task_id = event.get("data", {}).get("task_id")
+                        if event_task_id != task_id:
+                            # Skip events for other tasks
+                            continue
+
                     # Format and yield the transaction event
                     sse_data = f"data: {json.dumps(event)}\n\n"
                     yield sse_data
-                    print(f"📤 Sent transaction event: {event.get('event_type')}")
+                    print(f"📤 Sent transaction event: {event.get('event_type')} for task: {event.get('data', {}).get('task_id')}")
                     
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive
