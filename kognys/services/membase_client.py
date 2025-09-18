@@ -633,24 +633,25 @@ async def async_join_task(task_id: str, agent_id: str, max_retries: int = 3) -> 
     
     return False
 
-async def async_finish_task(task_id: str, agent_id: str, max_retries: int = 3) -> bool:
-    """Async version of finish_task for non-blocking blockchain operations."""
+async def async_finish_task(task_id: str, agent_id: str, max_retries: int = 3):
+    """Async version of finish_task for non-blocking blockchain operations.
+    Returns tuple of (success, transaction_hash)"""
     if not API_BASE_URL:
         print(f"  - ❌ FAILED: MEMBASE_API_URL is not set in environment")
-        return False
+        return False, None
     if not agent_id:
         print(f"  - ❌ FAILED: MEMBASE_ID is not set in environment")
-        return False
-        
+        return False, None
+
     task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}/finish"
     payload = {"agent_id": agent_id}
     headers = _get_headers()
-    
+
     print(f"\n--- ✅ Finishing On-Chain Task (Async) ---")
     print(f"  - Endpoint: POST {task_url}")
     print(f"  - Agent ID: {agent_id}")
     print(f"  - Task ID: {task_id}")
-    
+
     for attempt in range(max_retries):
         try:
             async with aiohttp.ClientSession() as session:
@@ -660,7 +661,7 @@ async def async_finish_task(task_id: str, agent_id: str, max_retries: int = 3) -
                     tx_hash = response_data.get('transaction_hash', 'N/A')
                     print(f"  - ✅ Success: Task '{task_id}' finished by agent '{agent_id}'.")
                     print(f"  - 🔗 Transaction Hash: {tx_hash}")
-                    return True
+                    return True, tx_hash
         except aiohttp.ClientError as e:
             if attempt < max_retries - 1:
                 wait_time = (attempt + 1) * 2  # Linear backoff: 2s, 4s, 6s
@@ -670,9 +671,9 @@ async def async_finish_task(task_id: str, agent_id: str, max_retries: int = 3) -
             
             print(f"  - ❌ FAILED: Could not finish task '{task_id}'")
             print(f"     Error: {str(e)}")
-            return False
-    
-    return False
+            return False, None
+
+    return False, None
 
 async def async_blockchain_operations_background(task_id: str, agent_id: str):
     """Run all blockchain operations in the background without blocking research."""
@@ -695,53 +696,43 @@ async def async_blockchain_operations_background(task_id: str, agent_id: str):
 async def async_finish_blockchain_operations(task_id: str, agent_id: str, emit_callback=None):
     """Finish blockchain operations and emit transaction_confirmed event to frontend."""
     print(f"🏁 Finishing blockchain operations for task: {task_id}")
-    
+
     # Use the dedicated async_finish_task function
-    finish_success = await async_finish_task(task_id, agent_id)
-    
-    if finish_success:
+    finish_success, tx_hash = await async_finish_task(task_id, agent_id)
+
+    if finish_success and tx_hash and tx_hash != 'N/A':
         print(f"✅ Background blockchain: Task {task_id} finished successfully")
-        
-        # Get the actual transaction hash by querying the task
+
+        # Format transaction hash with 0x prefix if not present
+        actual_tx_hash = tx_hash if tx_hash.startswith('0x') else f'0x{tx_hash}'
+
+        transaction_event = {
+            "event_type": "transaction_confirmed",
+            "data": {
+                "task_id": task_id,
+                "transaction_hash": actual_tx_hash,
+                "operation": "task_finish",
+                "status": "Blockchain transaction confirmed"
+            },
+            "timestamp": time.time(),
+            "agent": "system"
+        }
+
+        # Send to global transaction queue using shared system
         try:
-            if API_BASE_URL:
-                task_url = f"{API_BASE_URL}/api/v1/tasks/{task_id}"
-                headers = _get_headers()
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(task_url, headers=headers, timeout=10) as response:
-                        if response.status == 200:
-                            task_data = await response.json()
-                            actual_tx_hash = task_data.get('finish_transaction_hash') or task_data.get('transaction_hash', 'N/A')
-                            
-                            if actual_tx_hash and actual_tx_hash != 'N/A':
-                                transaction_event = {
-                                    "event_type": "transaction_confirmed",
-                                    "data": {
-                                        "task_id": task_id,
-                                        "transaction_hash": actual_tx_hash,
-                                        "operation": "task_finish",
-                                        "status": "Blockchain transaction confirmed"
-                                    },
-                                    "timestamp": time.time(),
-                                    "agent": "system"
-                                }
-                                
-                                # Send to global transaction queue using shared system
-                                try:
-                                    from kognys.services.transaction_events import emit_transaction_confirmed
-                                    emit_transaction_confirmed(task_id, actual_tx_hash, "task_finish")
-                                except Exception as queue_e:
-                                    print(f"⚠️ Could not emit transaction event: {queue_e}")
-                                
-                                # Also call callback if provided
-                                if emit_callback:
-                                    try:
-                                        emit_callback(transaction_event)
-                                        print(f"📡 Called transaction_confirmed callback with hash: {actual_tx_hash}")
-                                    except Exception as cb_e:
-                                        print(f"⚠️ Transaction callback error: {cb_e}")
-        except Exception as get_hash_e:
-            print(f"⚠️ Could not retrieve transaction hash: {get_hash_e}")
+            from kognys.services.transaction_events import emit_transaction_confirmed
+            emit_transaction_confirmed(task_id, actual_tx_hash, "task_finish")
+            print(f"📡 Emitted transaction_confirmed event with hash: {actual_tx_hash}")
+        except Exception as queue_e:
+            print(f"⚠️ Could not emit transaction event: {queue_e}")
+
+        # Also call callback if provided
+        if emit_callback:
+            try:
+                emit_callback(transaction_event)
+                print(f"📡 Called transaction_confirmed callback with hash: {actual_tx_hash}")
+            except Exception as cb_e:
+                print(f"⚠️ Transaction callback error: {cb_e}")
     else:
         print(f"❌ Background blockchain: Failed to finish task {task_id}")
         
