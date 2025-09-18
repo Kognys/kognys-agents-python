@@ -325,10 +325,17 @@ async def stream_system_logs():
         }
     )
 
+# Transaction stream endpoint - DEPRECATED
+# Transactions now come through the main /papers/stream endpoint via transaction_updated event
+# Keeping this endpoint for backward compatibility but it won't receive events
 @app.get("/transactions/stream")
 async def stream_transaction_events(task_id: str = None):
-    """Streams blockchain transaction events via Server-Sent Events."""
-    print(f"Starting transaction event streaming... (task_id: {task_id})")
+    """[DEPRECATED] Streams blockchain transaction events via Server-Sent Events.
+
+    Note: Transaction events are now sent through the main /papers/stream endpoint.
+    This endpoint is kept for backward compatibility but won't receive new events.
+    """
+    print(f"[DEPRECATED] Transaction stream endpoint called (task_id: {task_id})")
 
     async def generate_transaction_stream():
         """Generate SSE stream for blockchain transaction events."""
@@ -354,11 +361,14 @@ async def stream_transaction_events(task_id: str = None):
                         # Timeout occurred, send heartbeat
                         raise asyncio.TimeoutError()
 
+                    print(f"📥 Received event from queue: {event.get('event_type')} for task: {event.get('data', {}).get('task_id')}")
+
                     # If task_id is specified, only send events for that task
                     if task_id:
                         event_task_id = event.get("data", {}).get("task_id")
                         if event_task_id != task_id:
                             # Skip events for other tasks
+                            print(f"⏭️ Skipping event for different task. Expected: {task_id}, Got: {event_task_id}")
                             continue
 
                     # Format and yield the transaction event
@@ -386,11 +396,7 @@ async def stream_transaction_events(task_id: str = None):
             }
             yield f"data: {json.dumps(error_event)}\n\n"
         finally:
-            # Clean up the callback
-            try:
-                unified_executor.event_callbacks.remove(transaction_callback)
-            except ValueError:
-                pass  # Callback wasn't in the list
+            print(f"Transaction stream closed for task_id: {task_id}")
     
     return StreamingResponse(
         generate_transaction_stream(),

@@ -718,13 +718,9 @@ async def async_finish_blockchain_operations(task_id: str, agent_id: str, emit_c
             "agent": "system"
         }
 
-        # Send to global transaction queue using shared system
-        try:
-            from kognys.services.transaction_events import emit_transaction_confirmed
-            emit_transaction_confirmed(task_id, actual_tx_hash, "task_finish")
-            print(f"📡 Emitted transaction_confirmed event with hash: {actual_tx_hash}")
-        except Exception as queue_e:
-            print(f"⚠️ Could not emit transaction event: {queue_e}")
+        # No longer need to emit to global queue since we use callback
+        # The callback will handle emitting the event through the main stream
+        print(f"📡 Transaction confirmed with hash: {actual_tx_hash}")
 
         # Also call callback if provided
         if emit_callback:

@@ -403,21 +403,25 @@ class UnifiedExecutor:
                 
                 # Create callback that uses our event emission
                 def emit_callback(event):
-                    # Emit the event through our standard emission system
-                    try:
-                        for callback in self.event_callbacks:
-                            callback(event)
-                    except Exception as cb_e:
-                        print(f"⚠️ Error in transaction_confirmed callback: {cb_e}")
-                    
-                    # Also emit to the global transaction queue for the transaction stream
-                    try:
-                        from kognys.services.transaction_events import get_transaction_queue
-                        queue = get_transaction_queue()
-                        queue.put_nowait(event)
-                        print(f"📡 Also queued transaction event for transaction stream: {event.get('event_type')}")
-                    except Exception as queue_e:
-                        print(f"⚠️ Could not queue transaction event: {queue_e}")
+                    # Transform transaction_confirmed to transaction_updated for the main stream
+                    if event.get("event_type") == "transaction_confirmed":
+                        # Create a transaction_updated event
+                        updated_event = {
+                            "event_type": "transaction_updated",
+                            "data": {
+                                "task_id": event["data"]["task_id"],
+                                "transaction_hash": event["data"]["transaction_hash"],
+                                "status": "Transaction confirmed on blockchain"
+                            },
+                            "timestamp": event.get("timestamp", time.time()),
+                            "agent": "system"
+                        }
+                        # Emit through our standard emission system
+                        try:
+                            self._emit_event("transaction_updated", updated_event["data"], "system")
+                            print(f"📡 Emitted transaction_updated event with hash: {event['data']['transaction_hash']}")
+                        except Exception as cb_e:
+                            print(f"⚠️ Error emitting transaction_updated: {cb_e}")
                 
                 # Start blockchain operations with callback
                 try:
@@ -449,17 +453,21 @@ class UnifiedExecutor:
     
     async def execute_streaming(self, initial_state: KognysState, config: Dict[str, Any]) -> AsyncGenerator[Dict[str, Any], None]:
         """Execute the graph with streaming events (for SSE)."""
-        
+
         print(f"🚀 UnifiedExecutor.execute_streaming called with question: {initial_state.question}")
-        
+
         # Set execution ID and clear processed nodes for new execution
         import uuid
         self._current_execution_id = str(uuid.uuid4())
         self._processed_nodes.clear()
-        
+
         event_queue = asyncio.Queue()
+        transaction_confirmed = asyncio.Event()  # Event to signal transaction confirmation
 
         def stream_callback(event: Dict[str, Any]):
+            # Check if this is the transaction_updated event
+            if event.get("event_type") == "transaction_updated":
+                transaction_confirmed.set()  # Signal that transaction is confirmed
             event_queue.put_nowait(event)
 
         self.add_event_callback(stream_callback)
@@ -532,6 +540,21 @@ class UnifiedExecutor:
                 else:
                     self._emit_event("error", {"error": str(e)}, agent="system")
             finally:
+                # Wait for transaction confirmation with a timeout of 30 seconds
+                # Only wait if we emitted a research_completed event (which means we expect a transaction)
+                if getattr(self, '_research_completed_emitted', False):
+                    try:
+                        print("⏳ Waiting for transaction confirmation...")
+                        await asyncio.wait_for(transaction_confirmed.wait(), timeout=30.0)
+                        print("✅ Transaction confirmed, closing stream")
+                    except asyncio.TimeoutError:
+                        print("⚠️ Transaction confirmation timed out after 30 seconds")
+                        # Emit a warning event
+                        self._emit_event("transaction_timeout", {
+                            "status": "Transaction confirmation taking longer than expected",
+                            "message": "The transaction is still being processed on the blockchain"
+                        }, agent="system")
+
                 await event_queue.put(None) # Sentinel to signal completion
 
         exec_task = asyncio.create_task(run_graph())
